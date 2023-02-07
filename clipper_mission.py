@@ -98,7 +98,7 @@ class Body(object):
         shape = vtk.vtkTransform()
         shape.RotateZ(meridian) #-meridian_rotation[self.name])
         self.radii = radii # get_radii(self.name)
-        shape.Scale(self.radii[0], self.radii[1], self.radii[2])
+        shape.planet_scale(self.radii[0], self.radii[1], self.radii[2])
         transform = vtk.vtkTransformPolyDataFilter()
         transform.SetInputConnection(sphere.GetOutputPort())
         transform.SetTransform(shape)
@@ -289,7 +289,7 @@ class DataLoader:
     class Schedule:
         def __init__(self, init, launch, arrival, end):
             self.initial_time = init
-            self.launch_time = launch 
+            self.launch_time = launch
             self.arrival_time = arrival
             self.final_time = end
 
@@ -324,7 +324,7 @@ class DataLoader:
                 'F': (140183, 140680)
                 }
 
-        self.texture_files = { 
+        self.texture_files = {
                 'Sun':     os.path.join(media_path, '2k_sun_bright.jpg'),
                 'Mercury': os.path.join(media_path, '2k_mercury.jpg'),
                 'Venus':   os.path.join(media_path, '2k_venus.jpg'),
@@ -361,7 +361,7 @@ class DataLoader:
                 'Moon': 180
                 }
 
-        self.orbital_period = { 
+        self.orbital_period = {
                 'Sun': 0,
                 'Mercury': 88*day,
                 'Venus': 225*day,
@@ -378,7 +378,7 @@ class DataLoader:
                 'Moon': 365.256*day,
                  }
 
-        self.planet_colors = { 
+        self.planet_colors = {
                 'Sun':      to_unit_rgb([255,167,0]),
                 'Mercury':  to_unit_rgb([112,109,113]),
                 'Venus':    to_unit_rgb([240,218,166]),
@@ -407,7 +407,7 @@ class DataLoader:
         # coverage dates for Clipper
         self.etb = spice.cell_double(10000)
         # entire duration of the mission
-        spice.spkcov('19F23_VEEGA_L230511_A290930_LP01_V2_scpse.bsp', self.spice_id, self.etb)
+        spice.spkcov(os.path.join(naif_path, '19F23_VEEGA_L230511_A290930_LP01_V2_scpse.bsp'), self.spice_id, self.etb)
         # arrival time
         self.etarrive= spice.str2et('2029 SEP 27 18:26:02.4221 TDB')
         self.init_time = self.etb[0]
@@ -443,7 +443,7 @@ class DataLoader:
             self.full_paths[name] = np.array(self.full_paths[name])[:,:3]
             self.interpl_paths[name] = np.array(self.interpl_paths[name])[:,:3]
 
-        myprint(verbose=verbose, text='Acquiring Jupiter\'s moons across time domain')
+        myprint(verbose=verbose, text='Acquiring Jupiter\'s moons\' path across time domain')
         for name in self.jupiter_moon_names:
             myprint(verbose=verbose, text=' * {}'.format(name))
             self.tour_paths[name], not_used = spice.spkezr(name, self.ettour, default_frame, abcorr, 'Jupiter')
@@ -491,7 +491,13 @@ saved_relative_position = None
 in_progress = False
 cam_changed = True
 
-# VTK helper functions
+
+'''
+VTK helper functions
+'''
+def get_renderer(window):
+    return window.GetRenderers().GetFirstRenderer()
+
 def make_point_actor(pos=[0,0,0], color=[1,0,0], size=5):
     points = vtk.vtkPoints()
     points.InsertNextPoint(0, 0, 0)
@@ -593,9 +599,6 @@ def sun_mercury_distance(data):
 
 def sun_radius(data):
     return data.bodies['Sun'].GetMaxRadius()
-
-def get_renderer():
-    return render_window.GetRenderers().GetFirstRenderer()
 
 def get_camera():
     return get_renderer().GetActiveCamera()
@@ -738,291 +741,237 @@ def read_camera(str):
         cam.SetClippingRange(settings['clip'])
     if 'view' in settings:
         cam.SetViewAngle(settings['view'])
-    
+
 def focal_distance():
     return np.linalg.norm(focal_vector())
 
-class callback:
-    def __init__(self, data, cb=None):
-        self.data = data
-        self.callback = cb
+# Class to manage date
+class date:
+    def __init__(self, clock, window):
+        self.clock = clock
+        self.window = window
+    def update(self, obj, event, data):
+        et = obj.GetRepresentation().GetValue()
+        self.clock = et*hour + data.etb[0]
+        renderer = get_renderer(self.window)
+        renderer.RemoveActor(data.clipper_orbit.orbit_actor)
+        renderer.RemoveActor(data.clipper_orbit.position_actor)
+        renderer.RemoveActor(data.clipper_orbit.launch_orbit_actor)
+        # renderer.RemoveActor(clipper_orbit.launch_site_curve_actor)
+        data.clipper_orbit = ClipperOrbit()
+        renderer.AddActor(data.clipper_orbit.orbit_actor)
+        renderer.AddActor(data.clipper_orbit.position_actor)
+        renderer.AddActor(data.clipper_orbit.launch_orbit_actor)
 
-    def __call__(self, obj, event):
-        return self.callback(obj, event, self.data)
-
-# Callback function for the GUI slider
-class time_callback(callback):
-    def __init__(self, time_step):
+# Class to encapsulate various aspects of the simulation state
+class SimulationState:
+    def __init__(self, params, time_step, scale, date):
+        self.params = params
         self.time_step = time_step
-        callback.__init__(self, )
+        self.planet_scale = scale
+        self.date = date
 
-def slider_callback(obj, event):
-    global time_step
-    value = obj.GetRepresentation().GetValue()
-    # number of days per second
-    # refresh_rate * step = value*day
-    time_step = float(value*hour)/refresh_rate
-    myprint(verbose=verbose, text='time_step is now {}'.format(time_step))
+# Class to encapsulate various graphical elements of the visualization
+class GraphicsObjects:
+    def __init__(self, window, text_actor_body, orbit_actors, ring_actors):
+        self.window = window
+        self.text_actor_body = text_actor_body
+        self.orbit_actors = orbit_actors
+        self.ring_actors = ring_actors
 
-def planet_slider_callback(obj, event):
-    global ring_actors
-    planet_scale = obj.GetRepresentation().GetValue()
-    for name in bodies:
-        body = bodies[name]
-        if name == 'Sun' and planet_scale > sun_max:
-            body.ScaleActor(sun_max)
-        else:
-             body.ScaleActor(planet_scale)
-    # adjust Saturn rings accordingly
-    for actor in ring_actors:
-        actor.SetScale(planet_scale, planet_scale, planet_scale)
-
-def time_slider_callback(obj, event):
-    global clock
-    global data
-    global render_window
-
-    current = clock
-    et = obj.GetRepresentation().GetValue()
-    clock = et*hour + data.etb[0]
-
-    renderer = get_renderer()
-    renderer.RemoveActor(data.get_clipper().orbit_actor)
-    renderer.RemoveActor(data.get_clipper().position_actor)
-    renderer.RemoveActor(data.get_clipper().launch_orbit_actor)
-    # renderer.RemoveActor(clipper_orbit.launch_site_curve_actor)
-    data.get_clipper() = ClipperOrbit()
-    renderer.AddActor(data.get_clipper().orbit_actor)
-    renderer.AddActor(data.get_clipper().position_actor)
-    renderer.AddActor(data.get_clipper().launch_orbit_actor)
-    # renderer.AddActor(clipper_orbit.launch_site_curve_actor)
-
-# Handles the key press to change camera focal point
-def key_pressed_callback(obj, event):
-    global focus_planet
-    global show_ecliptic
-    global show_orbits
-    global orbit_actors
-    global ecliptic_actors
-    global resolution
-    global prev_resolution
-    global do_tether
-    global planet_focus_changed
-    global zoom_factor
-    global data
-
-    new_key = obj.GetKeySym()
-    if new_key.isdigit():
-        key = int(new_key)
-        if key <= 8 and data.all_body_names[key] != focus_planet:
-            myprint(verbose=True, text='changing focus from {} to {}'.format(focus_planet, data.all_body_names[key]))
-            focus_planet = data.all_body_names[key]
-            planet_focus_changed = True
-            saved_relative_position = False
-            do_tether = True
-            cam_setting = vantage_point(focus_planet)
-            get_camera().SetPosition(cam_setting['pos'])
-            get_camera().SetFocalPoint(cam_setting['focal'])
-            get_camera().SetViewUp(cam_setting['up'])
-            text_actor_body.SetInput('Current Focus: {}'.format(focus_planet))
-
-        # Overrides the default vtk behavior for keypress '3'
-        if int(new_key) == 3:
-            render_window.StereoRenderOn()
-    elif new_key == 'minus':
-        focus_planet = 'N/A'
-        planet_focus_changed = False
-        text_actor_body.SetInput('Current Focus: None')
-        do_tether = False
-    elif new_key == 'o' or new_key == 'O':
-        show_orbits = not show_orbits
-        if show_orbits:
-            myprint(verbose=True, text='now showing orbits')
-            for name in orbit_actors:
-                if clock < data.etarrive and name in data.jupiter_moon_names:
-                    continue
-                myprint(verbose=True, text='added orbit of {}'.format(name))
-                myprint(verbose=True, text='there are {} vertices in this orbit'.format(orbit_actors[name].GetMapper().GetInput().GetPoints().GetNumberOfPoints()))
-                get_renderer().AddActor(orbit_actors[name])
-        else:
-            myprint(verbose=True, text='now hiding orbits')
-            for name in orbit_actors:
-                get_renderer().RemoveActor(orbit_actors[name])
-        render_window.Render()
-    elif new_key == 'f':
-        if render_window.GetFullScreen():
-            render_window.FullScreenOff()
-        render_window.Render()
-    elif new_key == 'exclam' or new_key == 'at' or new_key == 'numbersign' \
-         or new_key == 'dollar' or new_key == 'asciicircum' \
-         or new_key == 'plus' or new_key == 'equal' or new_key == 'ampersand' \
-         or new_key == 'v' or new_key == 'a' or new_key == 'b' or new_key == 'c' \
-         or new_key == 'd' or new_key == 'g' or new_key == 'semicolon' \
-         or new_key == 'quoteright' or new_key == 'k':
-        new_focus_planet = focus_planet
-        if new_key == 'exclam':
-            new_focus_planet = 'Io'
-        elif new_key == 'at':
-            new_focus_planet = 'Europa'
-        elif new_key == 'numbersign':
-            new_focus_planet = 'Ganymede'
-        elif new_key == 'dollar':
-            new_focus_planet = 'Callisto'
-        elif new_key == 'asciicircum':
-            new_focus_planet = 'Moon'
-        elif new_key == 'plus':
-            new_focus_planet = 'Clipper Forward'
-        elif new_key == 'equal':
-            new_focus_planet = 'Clipper Backward'
-        elif new_key == 'ampersand':
-            new_focus_planet = 'Clipper'
-        elif new_key == 'v':
-            new_focus_planet = 'ecliptic'
-        elif new_key == 'a':
-            new_focus_planet = 'Clipper-Earth'
-        elif new_key == 'b':
-            new_focus_planet = 'Clipper-Mars'
-        elif new_key == 'c':
-            new_focus_planet = 'Clipper-Jupiter'
-        elif new_key == 'd':
-            new_focus_planet = 'Clipper-Europa'
-        elif new_key == 'g':
-            new_focus_planet = 'Clipper-Venus'
-        elif new_key == 'semicolon':
-            zoom_factor /= 2.0
-        elif new_key == 'quoteright':
-            zoom_factor *= 2.0
-        elif new_key == 'k':
-            print_camera()
-            return
-        if new_focus_planet != focus_planet:
-            focus_planet = new_focus_planet.split()[0]
-            planet_focus_changed = True
-            saved_relative_position = False
-            do_tether = True
-            camera = get_camera()
-            cam_setting = vantage_point(focus_planet)
-            camera.SetPosition(cam_setting['pos'])
-            camera.SetFocalPoint(cam_setting['focal'])
-            camera.SetViewUp(cam_setting['up'])
-            text_actor_body.SetInput('Current Focus: {}'.format(focus_planet))
-        camera = get_camera()
-        if zoom_factor != 1:
-            camera.Zoom(zoom_factor)
-            zoom_factor = 1
-            myprint(verbose=True, text='camera view angle: {}'.format(camera.GetViewAngle()))
-    elif new_key == 't':
-        # tether mode
-        if not do_tether:
-            do_tether = True
-            myprint(verbose=True, text='tethering activated')
-        else:
-            do_tether = False
-            saved_relative_position = None
-            myprint(verbose=True, text='tethering deactivated')
-    elif new_key == 'h':
-        myprint(verbose=True, text='List of keyboard commands:')
-        myprint(verbose=True, text='\'0\', \'1\', \'2\', ..., \'8\': Point the camera to the Sun, Mercury, Venus, ..., Neptune and track')
-        myprint(verbose=True, text='\'!\', \'@\', \'#\', \'$\':  Point the camera to Jupiter\'s Galilean moons')
-        myprint(verbose=True, text='\'^\':                     Point the camera to the Moon')
-        myprint(verbose=True, text='\'&\':                     Point the camera to Clipper\'s position')
-        myprint(verbose=True, text='\'-\':                     Turn off tracking')
-        myprint(verbose=True, text='\'f\':                     Toggle full screen on and off')
-        myprint(verbose=True, text='\'a\', ..., \'d\':           Point camera from Clipper to Earth, Mars, Jupiter, Europa')
-        myprint(verbose=True, text='\'Ctrl-9\':                Point camera from Clipper to the Moon')
-        myprint(verbose=True, text='\'Ctrl-!\', \'Ctrl-@\':      Point camera from Clipper to Jupiter\'s moon')
-        myprint(verbose=True, text='\'t\':                     Toggle tethering on and off')
-        myprint(verbose=True, text='\'v\':                     Point the camera to the Sun\'s North pole')
-        myprint(verbose=True, text='\'o\' (\'O\'):               Turn on/off depiction of planets\' orbits')
-        myprint(verbose=True, text='\'h\':                     Print this information')
-    else:
-        myprint(verbose=verbose, text='unrecognized entered key is {}'.format(new_key))
-
-def window_resized_callback(obj, event):
-    global render_window
-    global resize_image
-    global render_x, render_y
-    global resolution
-    width, height = render_window.GetSize()
-    if resolution[0] != width or resolution[1] != height:
-        resolution[0] = width
-        resolution[1] = height
-        resize_image.SetOutputDimensions(resolution[0], resolution[1], 0)
-        resize_image.Update()
-        myprint(verbose=verbose, text='texture has been resized')
-        render_window.Render()
-
-def camera_modif_callback(caller, event):
-    global in_progress
-    global cam_changed
-    if not in_progress:
-        cam_changed = True
-
-def interaction_start_callback(caller, event):
-    global paused
-    global do_tether
-
-    if do_tether:
-        paused = True
-
-def interaction_end_callback(caller, event):
-    global paused
-    global do_tether
-
-    if do_tether:
-        paused = False
-
-def interaction_callback(caller, event):
-    global paused
-
-    cam = render_window.GetRenderers().GetFirstRenderer().GetActiveCamera()
-
-# Handles timers from the interactive render window and updates planet positions
-class TimerCallback:
-    def __init__(self, data):
-        global scoped_lock
-        global clock
-        self.ring_actors = []
-        self.arrow_actor = {}
-        self.body_actors = {}
-        self.body_point_actors = {}
-        self.body_tag_actors = {}
-        self.camera = None
-        self.text = None
-        self.time_display = None
+# Overarching class that contains and controls all aspects of the simulation
+# and visualization
+class Simulation:
+    def __init__(self, state, data, graphics):
+        self.state = state
         self.data = data
+        self.graphics = graphics
 
-    def execute(self, obj, event):
-        global focus_planet
-        global time_step
-        global render_window
-        global clock
-        global planet_focus_changed
-        global do_tether
-        global saved_relative_position
-        global cam_changed
-        global in_progress
-        global paused
-        global launch_orbit
-        global time_widget
-        global show_clipper_orbit
-        global zoom_factor
+    '''
+    Series of callback functions to affect the variables of the simulation
+    '''
+    def key_pressed_cb(self, obj, event):
+        new_key = obj.GetKeySym()
+        if new_key.isdigit():
+            key = int(new_key)
+            if key <= 8 and self.data.all_body_names[key] != self.state.focus_planet:
+                myprint(verbose=True, text='changing focus from {} to {}'.format(self.state.focus_planet, self.data.all_body_names[key]))
+                self.state.focus_planet = self.data.all_body_names[key]
+                self.state.planet_focus_changed = True
+                self.state.saved_relative_position = False
+                self.state.do_tether = True
+                cam_setting = vantage_point(self.state.focus_planet)
+                get_camera().SetPosition(cam_setting['pos'])
+                get_camera().SetFocalPoint(cam_setting['focal'])
+                get_camera().SetViewUp(cam_setting['up'])
+                self.graphics.text_actor_body.SetInput('Current Focus: {}'.format(self.state.focus_planet))
 
+            # Overrides the default vtk behavior for keypress '3'
+            if int(new_key) == 3:
+                self.graphics.window.StereoRenderOn()
+        elif new_key == 'minus':
+            self.state.focus_planet = 'N/A'
+            self.state.planet_focus_changed = False
+            self.graphics.text_actor_body.SetInput('Current Focus: None')
+            self.state.do_tether = False
+        elif new_key == 'o' or new_key == 'O':
+            self.state.show_orbits = not self.state.show_orbits
+            if self.state.show_orbits:
+                myprint(verbose=True, text='now showing orbits')
+                for name in self.graphics.orbit_actors:
+                    if self.state.clock < self.data.etarrive and name in self.data.jupiter_moon_names:
+                        continue
+                    myprint(verbose=True, text='added orbit of {}'.format(name))
+                    myprint(verbose=True, text='there are {} vertices in this orbit'.format(self.graphics.orbit_actors[name].GetMapper().GetInput().GetPoints().GetNumberOfPoints()))
+                    get_renderer(self.graphics.window).AddActor(self.graphics.orbit_actors[name])
+            else:
+                myprint(verbose=True, text='now hiding orbits')
+                for name in self.graphics.orbit_actors:
+                    get_renderer(self.graphics.window).RemoveActor(self.graphics.orbit_actors[name])
+            self.graphics.window.Render()
+        elif new_key == 'f':
+            if self.graphics.window.GetFullScreen():
+                self.graphics.window.FullScreenOff()
+            self.graphics.window.Render()
+        elif new_key == 'exclam' or new_key == 'at' or new_key == 'numbersign' \
+             or new_key == 'dollar' or new_key == 'asciicircum' \
+             or new_key == 'plus' or new_key == 'equal' or new_key == 'ampersand' \
+             or new_key == 'v' or new_key == 'a' or new_key == 'b' or new_key == 'c' \
+             or new_key == 'd' or new_key == 'g' or new_key == 'semicolon' \
+             or new_key == 'quoteright' or new_key == 'k':
+            self.state.new_focus_planet = self.state.focus_planet
+            if new_key == 'exclam':
+                self.state.new_focus_planet = 'Io'
+            elif new_key == 'at':
+                self.state.new_focus_planet = 'Europa'
+            elif new_key == 'numbersign':
+                self.state.new_focus_planet = 'Ganymede'
+            elif new_key == 'dollar':
+                self.state.new_focus_planet = 'Callisto'
+            elif new_key == 'asciicircum':
+                self.state.new_focus_planet = 'Moon'
+            elif new_key == 'plus':
+                self.state.new_focus_planet = 'Clipper Forward'
+            elif new_key == 'equal':
+                new_focus_planet = 'Clipper Backward'
+            elif new_key == 'ampersand':
+                self.state.new_focus_planet = 'Clipper'
+            elif new_key == 'v':
+                self.state.new_focus_planet = 'ecliptic'
+            elif new_key == 'a':
+                self.state.new_focus_planet = 'Clipper-Earth'
+            elif new_key == 'b':
+                self.state.new_focus_planet = 'Clipper-Mars'
+            elif new_key == 'c':
+                self.state.new_focus_planet = 'Clipper-Jupiter'
+            elif new_key == 'd':
+                self.state.new_focus_planet = 'Clipper-Europa'
+            elif new_key == 'g':
+                self.state.new_focus_planet = 'Clipper-Venus'
+            elif new_key == 'semicolon':
+                self.state.zoom_factor /= 2.0
+            elif new_key == 'quoteright':
+                self.state.zoom_factor *= 2.0
+            elif new_key == 'k':
+                print_camera(self.graphics.window)
+                return
+            if self.state.new_focus_planet != self.state.focus_planet:
+                self.state.focus_planet = self.state.new_focus_planet.split()[0]
+                self.state.planet_focus_changed = True
+                self.state.saved_relative_position = False
+                self.state.do_tether = True
+                camera = get_camera(self.graphics.window)
+                cam_setting = vantage_point(focus_planet)
+                camera.SetPosition(cam_setting['pos'])
+                camera.SetFocalPoint(cam_setting['focal'])
+                camera.SetViewUp(cam_setting['up'])
+                text_actor_body.SetInput('Current Focus: {}'.format(self.state.focus_planet))
+            camera = get_camera(self.graphics.window)
+            if self.state.zoom_factor != 1:
+                camera.Zoom(self.state.zoom_factor)
+                self.state.zoom_factor = 1
+                myprint(verbose=True, text='camera view angle: {}'.format(camera.GetViewAngle()))
+        elif new_key == 't':
+            # tether mode
+            if not self.state.do_tether:
+                self.state.do_tether = True
+                myprint(verbose=True, text='tethering activated')
+            else:
+                self.state.do_tether = False
+                self.state.saved_relative_position = None
+                myprint(verbose=True, text='tethering deactivated')
+        elif new_key == 'h':
+            myprint(verbose=True, text='List of keyboard commands:')
+            myprint(verbose=True, text='\'0\', \'1\', \'2\', ..., \'8\': Point the camera to the Sun, Mercury, Venus, ..., Neptune and track')
+            myprint(verbose=True, text='\'!\', \'@\', \'#\', \'$\':  Point the camera to Jupiter\'s Galilean moons')
+            myprint(verbose=True, text='\'^\':                     Point the camera to the Moon')
+            myprint(verbose=True, text='\'&\':                     Point the camera to Clipper\'s position')
+            myprint(verbose=True, text='\'-\':                     Turn off tracking')
+            myprint(verbose=True, text='\'f\':                     Toggle full screen on and off')
+            myprint(verbose=True, text='\'a\', ..., \'d\':           Point camera from Clipper to Earth, Mars, Jupiter, Europa')
+            myprint(verbose=True, text='\'Ctrl-9\':                Point camera from Clipper to the Moon')
+            myprint(verbose=True, text='\'Ctrl-!\', \'Ctrl-@\':      Point camera from Clipper to Jupiter\'s moon')
+            myprint(verbose=True, text='\'t\':                     Toggle tethering on and off')
+            myprint(verbose=True, text='\'v\':                     Point the camera to the Sun\'s North pole')
+            myprint(verbose=True, text='\'o\' (\'O\'):               Turn on/off depiction of planets\' orbits')
+            myprint(verbose=True, text='\'h\':                     Print this information')
+        else:
+            myprint(verbose=verbose, text='unrecognized entered key is {}'.format(new_key))
+
+    def time_step_cb(self, obj, event):
+        value = obj.GetRepresentation().GetValue()
+        self.state.time_step = float(value*hour)/self.state.params.refresh_rate
+
+    def planet_scale_cb(self, obj, event):
+        self.state.planet_scale = obj.GetRepresentation().GetValue()
+        for name in self.data.bodies.keys():
+            body = self.data.bodies[name]
+            if name == 'Sun' and self.state.planet_scale > self.params.sun_max:
+                body.ScaleActor(self.params.sun_max)
+            else:
+                body.ScaleActor(self.planet_scale)
+        # adjust Saturn rings accordingly
+        for actor in self.graphics.ring_actors:
+            actor.SetScale(self.state.planet_scale, self.state.planet_scale, self.state.planet_scale)
+
+    def window_resized_cb(self, obj, event):
+        width, height = self.graphics.window.GetSize()
+        if self.state.params.resolution[0] != width or self.state.params.resolution[1] != height:
+            self.state.params.resolution[0] = width
+            self.state.params.resolution[1] = height
+            resize_image.SetOutputDimensions(self.state.params.resolution[0], self.state.params.resolution[1], 0)
+            resize_image.Update()
+            myprint(verbose=verbose, text='texture has been resized')
+            self.graphics.window.Render()
+
+    def camera_modif_cb(self, caller, event):
+        if not self.state.params.in_progress:
+            self.state.params.cam_changed = True
+
+    def interaction_start_cb(self, caller, event):
+        if self.state.params.do_tether:
+            self.state.params.paused = True
+
+    def interaction_end_callback(self, caller, event):
+        if self.state.params.do_tether:
+            self.state.params.paused = False
+
+    def timer_cb(self, obj, event):
         cam = render_window.GetRenderers().GetFirstRenderer().GetActiveCamera()
-        if paused:
+        if self.state.params.paused:
             return
-
+        clock = self.state.date
         timestr = clock_as_str(clock)
-        if clock >= self.data.schedule.final_time:
+            if clock >= self.data.schedule.final_time:
             return
         current_focal_vector = focal_vector()
         # Update camera for currently selected planet
-        if focus_planet != 'N/A':
+        if self.state.params.focus_planet != 'N/A':
             # tether the camera position to the moving planet to maintain the relative position
             # that it has at the beginning or after a user change to the camera
-            show_clipper_orbit = True
-            in_progress = True
-            if focus_planet.split()[0] == 'Clipper':
+            self.state.params.show_clipper_orbit = True
+            self.state.params.in_progress = True
+            if self.state.focus_planet.split()[0] == 'Clipper':
                 new_body_pos = self.data.clipper_orbit.GetPosition(clock)
             elif focus_planet == 'Clipper-Earth':
                 new_body_pos = self.data.bodies['Earth'].GetPosition(clock)
@@ -1038,118 +987,66 @@ class TimerCallback:
                 new_body_pos = self.data.bodies[focus_planet].GetPosition(clock)
             else:
                 new_body_pos = self.data.bodies['Sun'].GetPosition(clock)
-            self.camera.SetFocalPoint(new_body_pos)
-            in_progress = False
-            if focus_planet == 'Clipper-Earth' or \
-                focus_planet == 'Clipper-Mars' or \
-                focus_planet == 'Clipper-Jupiter' or \
-                focus_planet == 'Clipper-Europa' or \
-                focus_planet == 'Clipper-Venus':
-                show_clipper_orbit = False
-                planet_name = focus_planet[8:]
+            self.graphics.camera.SetFocalPoint(new_body_pos)
+            self.state.params.in_progress = False
+            if self.state.params.focus_planet == 'Clipper-Earth' or \
+                self.state.params.focus_planet == 'Clipper-Mars' or \
+                self.state.params.focus_planet == 'Clipper-Jupiter' or \
+                self.state.params.focus_planet == 'Clipper-Europa' or \
+                self.state.params.focus_planet == 'Clipper-Venus':
+                self.state.params.show_clipper_orbit = False
+                planet_name = self.state.params.focus_planet[8:]
                 clipper_new_pos = clipper_orbit.GetPosition(clock)
-                do_tether = False
-                in_progress = True
-                self.camera.SetPosition(clipper_new_pos)
-                in_progress = False
-                self.text.SetInput('Current Focus: {}'.format(focus_planet))
+                self.state.params.do_tether = False
+                self.state.params.in_progress = True
+                self.graphics.camera.SetPosition(clipper_new_pos)
+                self.state.params.in_progress = False
+                self.text.SetInput('Current Focus: {}'.format(self.state.params.focus_planet))
             else:
-                cam_pos = np.array(self.camera.GetPosition())
-                self.text.SetInput('Current Focus: ' + focus_planet)
-                if do_tether:
-                    if saved_relative_position is None or cam_changed:
-                        saved_relative_position = current_focal_vector
-                        cam_changed = False
-                    in_progress = True
-                    self.camera.SetPosition(new_body_pos - saved_relative_position)
-                    in_progress = False
+                cam_pos = np.array(self.graphics.camera.GetPosition())
+                self.graphics.text_actor_time.SetInput('Current Focus: ' + self.state.params.focus_planet)
+                if self.state.params.do_tether:
+                    if self.state.params.saved_relative_position is None or self.state.params.cam_changed:
+                        self.state.params.saved_relative_position = current_focal_vector
+                        self.state.params.cam_changed = False
+                    self.state.params.in_progress = True
+                    self.graphics.camera.SetPosition(new_body_pos - self.state.params.saved_relative_position)
+                    self.state.params.in_progress = False
 
         for name in self.data.all_body_names:
             body = self.data.bodies[name]
             # Update position and rotation
-            self.body_actors[name] = body.MoveActor(clock)
-            self.body_point_actors[name] = body.MovePointActor(clock)
+            self.graphics.body_actors[name] = body.MoveActor(clock)
+            self.graphics.body_point_actors[name] = body.MovePointActor(clock)
             if name == 'Saturn':
-                for ra in self.ring_actors:
-                    ra.SetPosition(self.body_actors['Saturn'].GetPosition())
+                for ra in self.graphics.ring_actors:
+                    ra.SetPosition(self.graphics.body_actors['Saturn'].GetPosition())
                     copy_transformation(body.GetActor(), ra)
 
         # extend Clipper's orbit
         self.data.clipper_orbit.Update(clock)
 
 
-        self.time_display.SetInput(timestr)
-        time_widget.GetRepresentation().SetValue((clock-self.data.etb[0])/hour)
+        self.graphics.time_display.SetInput(timestr)
+        self.graphics.time_widget.GetRepresentation().SetValue((clock-self.data.etb[0])/hour)
         obj.GetRenderWindow().GetRenderers().GetFirstRenderer().RemoveActor(self.data.clipper_orbit.orbit_actor)
-        if show_clipper_orbit:
+        if self.state.params.show_clipper_orbit:
             obj.GetRenderWindow().GetRenderers().GetFirstRenderer().AddActor(self.data.clipper_orbit.orbit_actor)
         obj.GetRenderWindow().Render()
 
-        if not paused:
-            clock += time_step
+        if not self.state.params.paused:
+            self.state.date += time_step
 
-def make_slider(minval, maxval, init_val, title, xmin, xmax, y=0.1, format="%.2f"):
-    global render_window
-
-    slider = vtk.vtkSliderRepresentation2D()
-    slider.DebugOn()
-    slider.SetMinimumValue(minval)
-    slider.SetMaximumValue(maxval)
-    slider.GetSliderProperty().SetLineWidth(0.5)
-    slider.GetTubeProperty().SetLineWidth(0.5)
-    slider.GetLabelProperty().SetFontSize(1)
-    slider.SetLabelHeight(0.015)
-    slider.GetLabelProperty().BoldOff()
-    slider.SetValue(init_val)
-    slider.SetTitleText(title)
-    slider.GetTitleProperty().SetFontSize(1)
-    slider.GetTitleProperty().BoldOff()
-    slider.SetTitleHeight(0.02)
-    slider.SetTubeWidth(0.005)
-    slider.SetLabelFormat(format)  # float format
-    slider.GetPoint1Coordinate().SetCoordinateSystemToNormalizedDisplay()
-    slider.GetPoint1Coordinate().SetValue(xmin, y)
-    slider.GetPoint2Coordinate().SetCoordinateSystemToNormalizedDisplay()
-    slider.GetPoint2Coordinate().SetValue(xmax, y)
-
-    widget = vtk.vtkSliderWidget()
-    widget.DebugOn()
-    widget.SetInteractor(render_window.GetInteractor())
-    widget.SetRepresentation(slider)
-    widget.SetAnimationModeToJump()
-    widget.EnabledOn()
-
-    return [slider, widget]
-
-class PyQtDemo(QMainWindow):
-    def __init__(self, data, parent = None):
+class ClipperMission(QMainWindow):
+    def __init__(self, parent = None):
         QMainWindow.__init__(self, parent)
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
-        self.data = data
+        self.mission = None
 
     def main(args):
-        global render_window
-        global focus_planet
-        global refresh_rate
-        global time_step
-        global resize_image
-        global text_actor_body
-        global show_ecliptic
-        global show_orbits
-        global show_clipper_orbit
-        global resolution
-        global planet_min_max
-        global orbit_actors
-        global ecliptic_actors
-        global ring_actors
-        global body_actors
-        global body_point_actors
-        global body_tag_actors
-        global all_actors
-        global time_widget
-        global zoom_factor
-        global do_shadows
+
+
 
         # Timer Frequency
         refresh_rate = 5  # Hz
@@ -1464,9 +1361,16 @@ if __name__ == '__main__':
     parser.add_argument('--media', type=str, default='media', help='Path to media files')
     args = parser.parse_args()
 
+    app = QApplication(sys.argv)
+    window = ClipperMission()
+    window.ui.vtkWidget.GetRenderWindow().SetSize(args.resolution[0], args.resolution[1])
+    window.show()
+    window.SetWindowState(Qt.WindowMaximized)
+    window.iren.Initialize()
+
     show_ecliptic = args.ecliptic
     show_orbits = args.orbits
-    scale = args.scale
+    scale = args.planet_scale
     sun_max = args.sun
     planet_min_max = args.planet
     resolution = args.resolution
@@ -1484,7 +1388,7 @@ if __name__ == '__main__':
         do_shadows = False
     verbose = args.verbose
 
-    global data 
+    global data
     data = DataLoader(media_path=args.media, naif_path=)
 
     main()
