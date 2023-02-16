@@ -19,9 +19,9 @@ import sys
 
 # load the data
 print('loading the data from NAIF files...')
-spice.furnsh('19F23_VEEGA_L230511_A290930_LP01_V2_scpse.bsp') # clipper
-spice.furnsh('naif0012.tls') # bodies' dynamics
-spice.furnsh('pck00010.tpc') # bodies' constant values and orientation
+spice.furnsh('naif/19F23_VEEGA_L230511_A290930_LP01_V2_scpse.bsp') # clipper
+spice.furnsh('naif/naif0012.tls') # bodies' dynamics
+spice.furnsh('naif/pck00010.tpc') # bodies' constant values and orientation
 print('...done')
 
 # set up constants
@@ -141,7 +141,7 @@ print('Setting temporal domain...')
 # coverage dates for Clipper
 etb = spice.cell_double(10000)
 # entire duration of the mission
-spice.spkcov('19F23_VEEGA_L230511_A290930_LP01_V2_scpse.bsp', scid, etb)
+spice.spkcov('naif/19F23_VEEGA_L230511_A290930_LP01_V2_scpse.bsp', scid, etb)
 # arrival time
 etarrive= spice.str2et('2029 SEP 27 18:26:02.4221 TDB')
 
@@ -151,6 +151,7 @@ clock = init_time
 selected_interval = [init_time, final_time]
 
 paused = False
+video_mode = False
 
 # set up time array
 # total duration of the covered portion of Clipper in days
@@ -161,6 +162,9 @@ etlaunch    = etb[0] + np.arange(0, day*1.5, minute)
 etinterpl   = np.arange(etb[0], etarrive, day)
 # moon tour in hours
 ettour      = np.arange(etarrive, etb[1], hour)
+
+print(f'etfull={etfull}, etarrive={etarrive}, ettour={ettour}')
+print('time to launch: {} minutes, interplanetary travel time: {} days, touring time {} hours'.format(1.5*day/minute, (etarrive-init_time)/day-1.5, (etb[1]-etarrive)/hour))
 
 etinterpl_no_overlap = np.arange(etb[0]+day*1.5, etarrive, day)
 etclipper = np.concatenate((etlaunch, etinterpl_no_overlap, ettour))
@@ -468,7 +472,7 @@ class ClipperOrbit:
             self.orbit_actor = make_curve_actor([p_clipper, p_clipper], [0.5, 0.5, 0])
 
         if self.has_launched:
-            print('adding one point to curve')
+            # print('adding one point to curve')
             self.orbit_actor = add_point_to_curve(self.orbit_actor, p_clipper)
             self.orbit_actor.Modified()
 
@@ -707,20 +711,26 @@ def time_slider_callback(obj, event):
     global clock
     global clipper_orbit
     global render_window
+    global video_mode
 
     current = clock
     et = obj.GetRepresentation().GetValue()
     clock = et*hour + etb[0]
 
+    if video_mode:
+        video_mode = False
+        print('Video mode turned OFF after date change')
+    
+
     renderer = get_renderer()
     renderer.RemoveActor(clipper_orbit.orbit_actor)
     renderer.RemoveActor(clipper_orbit.position_actor)
-    renderer.RemoveActor(clipper_orbit.launch_orbit_actor)
+    # renderer.RemoveActor(clipper_orbit.launch_orbit_actor)
     # renderer.RemoveActor(clipper_orbit.launch_site_curve_actor)
     clipper_orbit = ClipperOrbit()
     renderer.AddActor(clipper_orbit.orbit_actor)
     renderer.AddActor(clipper_orbit.position_actor)
-    renderer.AddActor(clipper_orbit.launch_orbit_actor)
+    # renderer.AddActor(clipper_orbit.launch_orbit_actor)
     # renderer.AddActor(clipper_orbit.launch_site_curve_actor)
 
 # Handles the key press to change camera focal point
@@ -735,8 +745,10 @@ def key_pressed_callback(obj, event):
     global do_tether
     global planet_focus_changed
     global zoom_factor
+    global video_mode
 
     new_key = obj.GetKeySym()
+    print(f'newkey is {new_key}')
     if new_key.isdigit():
         key = int(new_key)
         if key <= 8 and all_body_names[key] != focus_planet:
@@ -778,10 +790,17 @@ def key_pressed_callback(obj, event):
         if render_window.GetFullScreen():
             render_window.FullScreenOff()
         render_window.Render()
+    elif new_key == 'v':
+        video_mode = not video_mode
+        if video_mode:
+            print('Video mode turned ON')
+        else:
+            print('Video mode turned OFF')
+        return
     elif new_key == 'exclam' or new_key == 'at' or new_key == 'numbersign' \
          or new_key == 'dollar' or new_key == 'asciicircum' \
          or new_key == 'plus' or new_key == 'equal' or new_key == 'ampersand' \
-         or new_key == 'v' or new_key == 'a' or new_key == 'b' or new_key == 'c' \
+         or new_key == 'n' or new_key == 'a' or new_key == 'b' or new_key == 'c' \
          or new_key == 'd' or new_key == 'g' or new_key == 'semicolon' \
          or new_key == 'quoteright' or new_key == 'k':
         new_focus_planet = focus_planet
@@ -801,7 +820,7 @@ def key_pressed_callback(obj, event):
             new_focus_planet = 'Clipper Backward'
         elif new_key == 'ampersand':
             new_focus_planet = 'Clipper'
-        elif new_key == 'v':
+        elif new_key == 'n':
             new_focus_planet = 'ecliptic'
         elif new_key == 'a':
             new_focus_planet = 'Clipper-Earth'
@@ -857,7 +876,8 @@ def key_pressed_callback(obj, event):
         print('\'Ctrl-9\':                Point camera from Clipper to the Moon')
         print('\'Ctrl-!\', \'Ctrl-@\':      Point camera from Clipper to Jupiter\'s moon')
         print('\'t\':                     Toggle tethering on and off')
-        print('\'v\':                     Point the camera to the Sun\'s North pole')
+        print('\'n\':                     Point the camera to the Sun\'s North pole')
+        print('\'v\':                     Toggle video recording mode')
         print('\'o\' (\'O\'):               Turn on/off depiction of planets\' orbits')
         print('\'h\':                     Print this information')
     else:
@@ -902,6 +922,23 @@ def interaction_callback(caller, event):
 
     cam = render_window.GetRenderers().GetFirstRenderer().GetActiveCamera()
 
+def save_frame(window, clock):
+    global video_basename
+    global args
+    # ---------------------------------------------------------------
+    # Save current contents of render window to PNG file
+    # ---------------------------------------------------------------
+    file_name = video_basename + str(int(clock)) + ".png"
+    image = vtk.vtkWindowToImageFilter()
+    image.SetInput(window)
+    png_writer = vtk.vtkPNGWriter()
+    png_writer.SetInputConnection(image.GetOutputPort())
+    png_writer.SetFileName(file_name)
+    window.Render()
+    png_writer.Write()
+    if args.verbose:
+        print(file_name + " has been successfully exported")
+
 # Handles timers from the interactive render window and updates planet positions
 class TimerCallback:
     def __init__(self):
@@ -932,12 +969,15 @@ class TimerCallback:
         global time_widget
         global show_clipper_orbit
         global zoom_factor
+        global video_mode
 
         cam = render_window.GetRenderers().GetFirstRenderer().GetActiveCamera()
         if paused:
             return
 
         timestr = clock_as_str(clock)
+        if video_mode:
+            save_frame(render_window, clock)
         if clock >= final_time:
             return
         current_focal_vector = focal_vector()
@@ -1315,15 +1355,19 @@ def main():
 
     render_window.AddObserver('ModifiedEvent', window_resized_callback)
 
+    '''
+    def make_slider(minval, maxval, init_val, title, xmin, xmax, y=0.1, format="%.2f"):
+    '''
+
     print('Creating sliders...')
-    slider, day_widget = make_slider(0, 730, time_step/hour * refresh_rate, 'Hours per second', 0.02, 0.2)
+    slider, day_widget = make_slider(minval=0, maxval=168, init_val=0.1, title='Hours per second', xmin=0.02, xmax=0.22)
     day_widget.AddObserver("InteractionEvent", slider_callback)
 
     # Widget to control the scale of the planets
-    slider2, planet_widget = make_slider(planet_min_max[0], planet_min_max[1], 1, 'Bodies scaling factor', .22, .42)
+    slider2, planet_widget = make_slider(planet_min_max[0], planet_min_max[1], 1, 'Bodies scaling factor', .24, .44)
     planet_widget.AddObserver("InteractionEvent", planet_slider_callback)
 
-    time_slider, time_widget = make_slider(0, (etb[1]-etb[0])/hour, 0, 'ET in hours since {}'.format(clock_as_str(etb[0])), 0.45, 0.98)
+    time_slider, time_widget = make_slider(0, (etb[1]-etb[0])/hour, 0, 'ET in hours since {}'.format(clock_as_str(etb[0])), 0.46, 0.96)
     time_widget.AddObserver('InteractionEvent', time_slider_callback)
 
     # Sign up to receive TimerEvent
@@ -1356,6 +1400,7 @@ if __name__ == '__main__':
     global do_record
     global filebase
     global do_shadows
+    global video_basename
 
     parser = argparse.ArgumentParser(
             description='Visualize Clipper Spacecraft and Solar System using NAIF Data',
@@ -1370,6 +1415,7 @@ if __name__ == '__main__':
     parser.add_argument('-v', '--video', metavar='filename', default='ephemeris', type=str, help='Filename to store each individual frame of the animation')
     parser.add_argument('-c', '--camera', metavar='json', type=str, help='Json string containing camera setting')
     parser.add_argument('--shadow', action='store_true', help='Use shadow map pass')
+    parser.add_argument('--verbose', action='store_true', help='Toggle verbose mode')
     args = parser.parse_args()
 
     show_ecliptic = args.ecliptic
@@ -1390,5 +1436,7 @@ if __name__ == '__main__':
         do_shadows = args.shadow
     else:
         do_shadows = False
+
+    video_basename = args.video
 
     main()

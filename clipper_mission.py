@@ -1,3 +1,4 @@
+from typing import Any, List, Dict
 import spiceypy as spice
 import vtk
 import argparse
@@ -10,11 +11,21 @@ import json
 import faulthandler
 import sys
 
-from PyQt5.QtWidgets import QApplication, QWidget, QMainWindow, QSlider, QGridLayout, QLabel, QPushButton, QTextEdit
+'''
+Note to self:
+    - time_scale is in hours per second (h/s)
+    - timeline position is in days (d)
+    - refresh rate (in Hz) is fixed (Hz=1/s)
+    - time step (in hours) is time scale / refresh rate 
+'''
+
+from PyQt5.QtWidgets import QApplication, QWidget, QMainWindow, QSlider, QGridLayout, QLabel, QPushButton, QTextEdit, QDoubleSpinBox, QDial, QProgressBar
 import PyQt5.QtCore as QtCore
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 import vtk
 from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
+
+verbose = False
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -31,46 +42,54 @@ class Ui_MainWindow(object):
         # it to centralWidget.
         self.vtkWidget = QVTKRenderWindowInteractor(self.centralWidget)
         # Sliders
-        self.slider_time_scale = QSlider()
-        self.slider_date = QSlider()
-        self.slider_planet_scale = QSlider()
+        self.timescale_spinbox = QDoubleSpinBox()
+        self.date_slider = QSlider()
+        self.planetscale_dial = QDial()
         # Push buttons
         self.push_screenshot = QPushButton()
         self.push_screenshot.setText('Save screenshot')
         self.push_quit = QPushButton()
         self.push_quit.setText('Quit')
+        '''
+        [----------][----------][----------][----------][----------][----------][----------][----------][-----------]
 
-        self.gridlayout.addWidget(self.vtkWidget, 0, 0, 4, 4)
-        self.gridlayout.addWidget(QLabel("Time Scale"), 4, 0, 1, 1)
-        self.gridlayout.addWidget(self.slider_time_scale, 4, 1, 1, 1)
-        self.gridlayout.addWidget(QLabel("Planet Scale"), 5, 0, 1, 1)
-        self.gridlayout.addWidget(self.slider_planet_scale, 5, 1, 1, 1)
-        self.gridlayout.addWidget(QLabel("Date"), 4, 2, 1, 1)
-        self.gridlayout.addWidget(self.slider_date, 4, 3, 1, 1)
-        self.gridlayout.addWidget(self.push_screenshot, 0, 5, 1, 1)
-        self.gridlayout.addWidget(self.push_quit, 5, 5, 1, 1)
+            0              1          2           3          4           5            6          7          8
+        [Time scale][----------][----------][Planet scale][----------][--Timeline][----------][---------][-snapshot-]  
+        [QSpingBox-][----slider--][---value--][--------slider--------][--value--][--quit----] 
+        '''
+        self.gridlayout.addWidget(self.vtkWidget, 0, 0, 5, 8)
+        self.gridlayout.addWidget(QLabel("Time Scale (hours/second)"), 5, 0, 1, 1)
+        self.gridlayout.addWidget(self.timescale_spinbox, 5, 1, 1, 1)
+        self.gridlayout.addWidget(QLabel("Planet Scale"), 5, 3, 1, 1)
+        self.gridlayout.addWidget(self.planetscale_dial, 5, 4, 1, 1)
+        self.gridlayout.addWidget(QLabel("Date (days)"), 5, 5, 1, 1)
+        self.gridlayout.addWidget(self.date_slider, 5, 6, 1, 2)
+        self.gridlayout.addWidget(self.push_screenshot, 6, 0, 1, 1)
+        self.gridlayout.addWidget(self.push_quit, 6, 1, 1, 1)
         MainWindow.setCentralWidget(self.centralWidget)
 
-# set up constants
-day     = 86400
-hour    = 3600
-minute  = 60
+class Units:
+    # set up constants
+    day = 86400
+    hour = 3600
+    minute = 60
+    second = 1
 
-# handy unit conversions
-def au_to_km(au):
-    return au * 149597871
+    # handy unit conversions
+    def au_to_km(au: int) -> int:
+        return au * 149597871
 
-def km_to_au(km):
-    return km / 149597871
+    def km_to_au(km: int) -> int:
+        return km / 149597871
 
-def deg_to_rad(deg):
-    return deg/180.*math.pi
+    def deg_to_rad(deg: float) -> float:
+        return deg/180.*math.pi
 
-def to_unit_rgb(rgb):
-    r = float(rgb[0]/255.)
-    g = float(rgb[1]/255.)
-    b = float(rgb[2]/255.)
-    return [r, g, b]
+    def to_unit_rgb(rgb: List[int]):
+        r = float(rgb[0]/255.)
+        g = float(rgb[1]/255.)
+        b = float(rgb[2]/255.)
+        return [r, g, b]
 
 # set frame and corrections
 default_frame = 'ECLIPJ2000'
@@ -81,13 +100,12 @@ abcorr = 'NONE'
 # recording of each individual frame, as well as the specification of the
 # camera setting, including in terms of the bodies and Clipper's position
 
-verbose = False
-def myprint(verbose, text):
+def myprint(verbose: bool, text: str):
     if verbose:
         print(text)
 
 class Body(object):
-    def __init__(self, name, texture_name, meridian, radii, color):
+    def __init__(self, name: str, texture_name: str, meridian: float, radii: List[float], color: List[int]):
         self.name = name.split()[0]
         self.img_filename = texture_name #texture_files[self.name]
         sphere = vtk.vtkTexturedSphereSource()
@@ -96,9 +114,10 @@ class Body(object):
         sphere.SetPhiResolution(40)
 
         shape = vtk.vtkTransform()
-        shape.RotateZ(meridian) #-meridian_rotation[self.name])
+        # shape.RotateZ(meridian) #-meridian_rotation[self.name])
         self.radii = radii # get_radii(self.name)
-        shape.planet_scale(self.radii[0], self.radii[1], self.radii[2])
+        # print(f'self.radii={self.radii}')
+        shape.Scale(self.radii[0], self.radii[1], self.radii[2])
         transform = vtk.vtkTransformPolyDataFilter()
         transform.SetInputConnection(sphere.GetOutputPort())
         transform.SetTransform(shape)
@@ -110,7 +129,7 @@ class Body(object):
             and name != 'Europa' and name != 'Ganymede':
             self.no_point = False
         if not self.no_point:
-            self.point_actor = make_point_actor([0,0,0], [1,1,1], 4)
+            self.point_actor = VTKUtils.make_point_actor([0,0,0], [1,1,1], 4)
             self.point_actor.GetProperty().RenderPointsAsSpheresOn()
             self.point_actor.GetProperty().SetColor(color[0], color[1], color[2])
         else:
@@ -125,31 +144,16 @@ class Body(object):
         self.orbit = None
         self.orbit_frame = None
 
-    def GetRadii(self):
-        return self.radii
-
-    def GetMaxRadius(self):
+    def get_max_radius(self) -> float:
         return np.amax(self.radii)
 
-    def SetStates(self, states, ets, frame):
+    def set_states(self, states, ets, frame):
         self.states = states
         self.times = ets
         self.orbit_frame = frame
         self.orbit = interpolate.make_interp_spline(self.times, self.states)
 
-    def GetCover(self):
-        if self.times is not None:
-            return [self.times[0], self.times[-1]]
-        else:
-            myprint(verbose=verbose, text='Invalid request: GetCover: no time coordinates available')
-
-    def GetLocalFrameName(self):
-        return self.local_frame
-
-    def GetGeometry(self):
-        return self.ellipsoid
-
-    def GetActor(self):
+    def get_actor(self) -> vtk.vtkActor:
         # Body in its own reference frame
         if self.actor is None:
             mapper = vtk.vtkPolyDataMapper()
@@ -164,10 +168,10 @@ class Body(object):
             self.actor.SetTexture(self.texture)
         return self.actor
 
-    def ScaleActor(self, scaling):
+    def scale_actor(self, scaling: float):
         self.actor.SetScale(scaling, scaling, scaling)
 
-    def GetPosition(self, et=clock, frame=default_frame):
+    def get_position(self, et: float, frame=default_frame) -> List[float]:
         if self.orbit is not None:
             if self.orbit_frame == frame:
                 return self.orbit(et)
@@ -175,15 +179,16 @@ class Body(object):
                 myprint(verbose=verbose, text='doing coordinate transformation')
                 return DataLoader.coordinate_transform(self.orbit(et), self.orbit_frame, frame, et)
         else:
-            myprint(verbose=verbose, text='Invalid request: GetPosition: no states available')
+            myprint(verbose=verbose, text='Invalid request: get_position: no states available')
+        return [0.,0.,0.]
 
-    def GetRotation(self, et=clock, frame=default_frame):
+    def get_rotation(self, et: float, frame=default_frame):
         mat = DataLoader.body_orientation(self.name, et, frame)
         return mat
 
-    def GetMatrix(self, et=clock, frame=default_frame):
-        mat = self.GetRotation(et, frame)
-        pos = self.GetPosition(et, frame)
+    def get_matrix(self, et: float, frame=default_frame) -> vtk.vtkMatrix4x4:
+        mat = self.get_rotation(et, frame)
+        pos = self.get_position(et, frame)
         matrix = vtk.vtkMatrix4x4()
         matrix.Identity()
         for row in range(3):
@@ -193,9 +198,9 @@ class Body(object):
             matrix.SetElement(row, 3, pos[row])
         return matrix;
 
-    def GetLocalPosition(self, pos, et=clock):
-        mat = self.GetRotation(et)
-        center =self.GetPosition(et)
+    def get_local_position(self, pos: List[float], et: float) -> List[float]:
+        mat = self.get_rotation(et)
+        center =self.get_position(et)
         dp = pos-center
         d = np.linalg.norm(dp)
         e1 = mat[:,0]
@@ -206,95 +211,105 @@ class Body(object):
         z = np.dot(dp, e3)
         return [x, y, z]
 
-    def GetGlobalPosition(self, pos, et=clock):
-        mat = self.GetRotation(et)
-        center = self.GetPosition(et)
-        return center + pos[0]*mat[:,0] + pos[1]*mat[:,1] + pos[2]*mat[:,2]
-
-    def GetEquatorialPlane(self, et=clock, frame=default_frame):
-        mat = self.GetRotation(et, frame)
-        p = np.array(self.GetPosition(et, frame))
+    def get_equatorial_plane(self, et: float, frame=default_frame) -> List[float]:
+        mat = self.get_rotation(et, frame)
+        p = np.array(self.get_position(et, frame))
         e1 = mat[:,0]
         e2 = mat[:,1]
         return [p, e1, e2]
 
-    def MoveActor(self, et=clock, frame=default_frame):
-        actor = self.GetActor()
-        actor.SetUserMatrix(self.GetMatrix(et, frame))
+    def move_actor(self, et: float, frame=default_frame) -> vtk.vtkActor:
+        actor = self.get_actor()
+        actor.SetUserMatrix(self.get_matrix(et, frame))
         return actor
 
-    def MovePointActor(self, et=clock, frame=default_frame):
+    def move_point_actor(self, et: float, frame=default_frame) -> vtk.vtkActor:
         actor = self.point_actor
-        actor.SetUserMatrix(self.GetMatrix(et, frame))
+        actor.SetUserMatrix(self.get_matrix(et, frame))
         return actor
 
-class ClipperOrbit:
-    def __init__(self, etclipper, clipper_full, init, earth):
-        self.earth = earth
-        self.etclipper = etclipper
-        self.clipper_full = clipper_full
-        self.init_time = init
+class Schedule:
+    def __init__(self, init: float, arrival: float, end: float):
+        self.initial_time = init
+        self.launch_time = init + 1.5*Units.day
+        self.arrival_time = arrival
+        self.final_time = end
+        # set up time array
+        # total duration of the covered portion of Clipper in days
+        self.full_timeline = np.arange(
+            self.initial_time, self.final_time, Units.day)
+        # 1.5 day from launch in minutes
+        self.prelaunch_timeline = self.initial_time + \
+            np.arange(0, Units.day*1.5, Units.minute)
+        # interplanetary travel in days (includes time to launch)
+        self.pretour_timeline = np.arange(
+            self.initial_time, self.arrival_time, Units.day)
+        # moon tour in hours
+        self.tour_timeline = np.arange(self.arrival_time, self.final_time, Units.hour)
+        self.transfer_timeline = np.arange(
+            self.launch_time, self.arrival_time, Units.day)
+        self.mission_timeline= np.concatenate((self.prelaunch_timeline, self.transfer_timeline, self.tour_timeline))
+
+class Clipper:
+    def __init__(self, data, clock=None):
+        self.earth = data.bodies['Earth']
+        self.schedule = data.schedule
         self.has_launched = False
-        self.intp = interpolate.make_interp_spline(x=etclipper, y=clipper_full)
-        self.launch = self.init + 1.5*day
-        p_clipper = self.intp(clock)
-        p_clipper[2] += 10
-        self.position_actor = make_point_actor(p_clipper, [1,1,0], 10)
+        # print(f'mission timeline = {self.schedule.mission_timeline}')
+        # print(f'clipper steps = {data.full_paths["clipper"]}')
+        self.intp = interpolate.make_interp_spline(x=self.schedule.mission_timeline, y=data.full_paths['clipper'])
+        self.launch = self.schedule.launch_time
+        p_clipper = self.intp(self.schedule.initial_time)
+        p_clipper[2] += 10 # raise launch site above Earth surface
+        self.position_actor = VTKUtils.make_point_actor(p_clipper, [1,1,0], 10)
         self.position_actor.GetProperty().RenderPointsAsSpheresOff()
 
-        if clock >= self.launch:
+        if clock is not None and clock >= self.launch:
             self.has_launched = True
             points = []
-            for t in np.arange(self.launch, clock, hour):
-                p_clipper = self.GetPosition(t)
+            for t in np.arange(self.launch, clock, Units.hour):
+                p_clipper = self.intp(t)
                 p_clipper[2] += 10
                 points.append(p_clipper)
-            self.orbit_actor = make_curve_actor(points, [0.5, 0.5, 0])
+            self.orbit_actor = VTKUtils.make_curve_actor(points, [0.5, 0.5, 0])
         else:
             self.orbit_actor = vtk.vtkActor()
         self.orbit_actor.GetProperty().RenderLinesAsTubesOff()
 
-    def Update(self, et=clock):
+    def update(self, et: float):
         p_clipper = self.intp(et)
-        p_launch = self.earth.GetPosition(et)
+        p_launch = self.earth.get_position(et)
         # myprint(verbose=verbose, text='Clipper at {}, launch site at {}, launch pos at {}'.format(p_clipper, p_launch, self.launch_pos))
         self.position_actor.SetPosition(p_clipper)
 
         if not self.has_launched and et >= self.launch:
             self.has_launched = True
-            self.orbit_actor = make_curve_actor([p_clipper, p_clipper], [0.5, 0.5, 0])
+            self.orbit_actor = VTKUtils.make_curve_actor([p_clipper, p_clipper], [0.5, 0.5, 0])
 
         if self.has_launched:
             myprint(verbose=verbose, text='adding one point to curve')
-            self.orbit_actor = add_point_to_curve(self.orbit_actor, p_clipper)
+            self.orbit_actor = VTKUtils.add_point_to_curve(self.orbit_actor, p_clipper)
             self.orbit_actor.Modified()
 
-    def GetPosition(self, et=clock):
+    def get_position(self, et: float):
         return self.intp(et)
 
 class DataLoader:
     # Static NAIF/SPICE helper functions
-    def get_radii(body_name):
+    def get_radii(body_name: str) -> List[float]:
         radii = spice.bodvrd( body_name.split()[0], 'RADII', 3 )
         myprint(verbose=verbose, text='radii={}'.format(radii))
-        return radii
-    def coordinate_transform(coord, from_frame, to_frame, et):
+        return radii[1]
+    def coordinate_transform(coord: List[float], from_frame:str, to_frame: str, et: float) -> List[float]:
         mat = spice.pxform(from_frame, to_frame, et)
         return spice.mxv(mat, coord)
-    def body_orientation(body_name, et, to_frame=default_frame, from_frame=None):
+    def body_orientation(body_name: str, et: float, to_frame: str, from_frame=None) -> np.ndarray:
         if from_frame is None:
             from_frame = 'IAU_' + body_name
         return spice.pxform(from_frame, to_frame, et)
 
-    class Schedule:
-        def __init__(self, init, launch, arrival, end):
-            self.initial_time = init
-            self.launch_time = launch
-            self.arrival_time = arrival
-            self.final_time = end
-
     # Import all the necessary NAIF data and sample trajectories
-    def __init__(self, media_path='./media', naif_path='.'):
+    def __init__(self, media_path='./media', naif_path='./naif', scale=1):
         # load the data
         myprint(verbose=verbose, text='loading the data from NAIF files...')
         spice.furnsh(os.path.join(naif_path, '19F23_VEEGA_L230511_A290930_LP01_V2_scpse.bsp')) # clipper
@@ -363,36 +378,36 @@ class DataLoader:
 
         self.orbital_period = {
                 'Sun': 0,
-                'Mercury': 88*day,
-                'Venus': 225*day,
-                'Earth': 365.256*day,
-                'Mars': 686.971*day,
-                'Jupiter': 4332.59*day,
-                'Saturn': 10759.22*day,
-                'Uranus': 30688.5*day,
-                'Neptune': 60182*day,
-                'Io': 4332.59*day,
-                'Europa': 4332.59*day,
-                'Ganymede': 4332.59*day,
-                'Callisto': 4332.59*day,
-                'Moon': 365.256*day,
+                'Mercury': 88*Units.day,
+                'Venus': 225*Units.day,
+                'Earth': 365.256*Units.day,
+                'Mars': 686.971*Units.day,
+                'Jupiter': 4332.59*Units.day,
+                'Saturn': 10759.22*Units.day,
+                'Uranus': 30688.5*Units.day,
+                'Neptune': 60182*Units.day,
+                'Io': 4332.59*Units.day,
+                'Europa': 4332.59*Units.day,
+                'Ganymede': 4332.59*Units.day,
+                'Callisto': 4332.59*Units.day,
+                'Moon': 365.256*Units.day,
                  }
 
         self.planet_colors = {
-                'Sun':      to_unit_rgb([255,167,0]),
-                'Mercury':  to_unit_rgb([112,109,113]),
-                'Venus':    to_unit_rgb([240,218,166]),
-                'Earth':    to_unit_rgb([44,49,115]),
-                'Mars':     to_unit_rgb([244,108,76]),
-                'Jupiter':  to_unit_rgb([240,210,145]),
-                'Saturn':   to_unit_rgb([200,170,100]),
-                'Uranus':   to_unit_rgb([193,238,238]),
-                'Neptune':  to_unit_rgb([81,106,161]),
-                'Io':       to_unit_rgb([252,240,113]),
-                'Europa':   to_unit_rgb([148,115,68]),
-                'Ganymede': to_unit_rgb([81,70,59]),
-                'Callisto': to_unit_rgb([86,77,53]),
-                'Moon':     to_unit_rgb([128, 128, 128])
+                'Sun':      Units.to_unit_rgb([255,167,0]),
+                'Mercury':  Units.to_unit_rgb([112,109,113]),
+                'Venus':    Units.to_unit_rgb([240,218,166]),
+                'Earth':    Units.to_unit_rgb([44,49,115]),
+                'Mars':     Units.to_unit_rgb([244,108,76]),
+                'Jupiter':  Units.to_unit_rgb([240,210,145]),
+                'Saturn':   Units.to_unit_rgb([200,170,100]),
+                'Uranus':   Units.to_unit_rgb([193,238,238]),
+                'Neptune':  Units.to_unit_rgb([81,106,161]),
+                'Io':       Units.to_unit_rgb([252,240,113]),
+                'Europa':   Units.to_unit_rgb([148,115,68]),
+                'Ganymede': Units.to_unit_rgb([81,70,59]),
+                'Callisto': Units.to_unit_rgb([86,77,53]),
+                'Moon':     Units.to_unit_rgb([128, 128, 128])
                 }
 
         self.radii = {}
@@ -405,32 +420,21 @@ class DataLoader:
 
         myprint(verbose=verbose, text='Setting temporal domain for Clipper mission...')
         # coverage dates for Clipper
-        self.etb = spice.cell_double(10000)
+        etb = spice.cell_double(10000)
         # entire duration of the mission
-        spice.spkcov(os.path.join(naif_path, '19F23_VEEGA_L230511_A290930_LP01_V2_scpse.bsp'), self.spice_id, self.etb)
+        spice.spkcov(os.path.join(naif_path, '19F23_VEEGA_L230511_A290930_LP01_V2_scpse.bsp'), self.spice_id, etb)
         # arrival time
-        self.etarrive= spice.str2et('2029 SEP 27 18:26:02.4221 TDB')
-        self.init_time = self.etb[0]
-        self.final_time = self.etb[1]
-        self.selected_interval = [self.init_time, self.final_time]
-
-        self.schedule = DataLoader.Schedule(init=self.init_time, launch=self.init_time+1.5*day, arrival=self.etarrive, end=self.final_time)
-
-        # set up time array
-        # total duration of the covered portion of Clipper in days
-        self.etfull      = np.arange(self.etb[0], self.etb[1], day)
-        # 1.5 day from launch in minutes
-        self.etlaunch    = self.etb[0] + np.arange(0, day*1.5, minute)
-        # interplanetary travel in days
-        self.etinterpl   = np.arange(self.etb[0], self.etarrive, day)
-        # moon tour in hours
-        self.ettour      = np.arange(self.etarrive, self.etb[1], hour)
-
-        self.etinterpl_no_overlap = np.arange(self.etb[0]+day*1.5, self.etarrive, day)
-        self.etclipper = np.concatenate((self.etlaunch, self.etinterpl_no_overlap, self.ettour))
+        arrival_time = spice.str2et('2029 SEP 27 18:26:02.4221 TDB')
+        init_time = etb[0]
+        final_time = etb[1]
+        selected_interval = [init_time, final_time]
+        self.schedule = Schedule(init=init_time, arrival=arrival_time, end=final_time)
 
         # query states during entire mission for clipper and relevant planets
         # states are given in (km, km/s)
+        '''
+        Bodies orbits during mission time frame
+        '''
         self.full_paths = {}
         self.interpl_paths = {}
         self.tour_paths = {}
@@ -438,21 +442,21 @@ class DataLoader:
         for id, name in enumerate(self.all_body_names):
             myprint(verbose=verbose, text=' * {}'.format(name))
             spice_name = self.all_body_names_spice[id]
-            self.full_paths[name], not_used = spice.spkezr(spice_name, self.etfull, default_frame, abcorr, 'Sun')
-            self.interpl_paths[name], not_used = spice.spkezr(spice_name, self.etinterpl, default_frame, abcorr, 'Sun')
-            self.full_paths[name] = np.array(self.full_paths[name])[:,:3]
-            self.interpl_paths[name] = np.array(self.interpl_paths[name])[:,:3]
+            self.full_paths[name], not_used = spice.spkezr(spice_name, self.schedule.full_timeline, default_frame, abcorr, 'Sun')
+            self.interpl_paths[name], not_used = spice.spkezr(spice_name, self.schedule.transfer_timeline, default_frame, abcorr, 'Sun')
+            self.full_paths[name] = scale*np.array(self.full_paths[name])[:,:3]
+            self.interpl_paths[name] = scale*np.array(self.interpl_paths[name])[:,:3]
 
         myprint(verbose=verbose, text='Acquiring Jupiter\'s moons\' path across time domain')
         for name in self.jupiter_moon_names:
             myprint(verbose=verbose, text=' * {}'.format(name))
-            self.tour_paths[name], not_used = spice.spkezr(name, self.ettour, default_frame, abcorr, 'Jupiter')
-            self.tour_paths[name] = np.array(self.tour_paths[name])[:,:3]
+            self.tour_paths[name], not_used = spice.spkezr(name, self.schedule.mission_timeline, default_frame, abcorr, 'Jupiter')
+            self.tour_paths[name] = scale*np.array(self.tour_paths[name])[:,:3]
 
         # clipper trajectory
         myprint(verbose=verbose, text=' * Clipper')
-        self.clipper_full, not_used = spice.spkezr(self.spice_idstr, self.etclipper, default_frame, abcorr, 'Sun')
-        self.clipper_orbit = np.array(self.clipper_full)[:,:3]
+        self.clipper_full, not_used = spice.spkezr(self.spice_idstr, self.schedule.mission_timeline, default_frame, abcorr, 'Sun')
+        self.full_paths['clipper'] = scale*np.array(self.clipper_full)[:,:3]
         myprint(verbose=verbose, text='...done')
 
         # def __init__(self, name, texture_name, meridian, radii, color)
@@ -461,14 +465,16 @@ class DataLoader:
         self.tags = {}
         for name in self.all_body_names:
             self.bodies[name] = Body(name, self.texture_files[name], self.meridian_rotation[name], self.radii[name], self.planet_colors[name])
-            self.bodies[name].SetStates(self.full_paths[name], self.etfull, default_frame)
+            self.bodies[name].set_states(self.full_paths[name], self.schedule.full_timeline, default_frame)
+        
+        self.clipper = Clipper(self)
 
-    def distance(self, body1, body2='Sun', et=clock, frame=default_frame):
-        p1 = self.bodies[body1].GetPosition(et, frame)
-        p2 = self.bodies[body2].GetPosition(et, frame)
+    def distance(self, body1: str, body2: str, et: float, frame=default_frame) -> float:
+        p1 = self.bodies[body1].get_position(et, frame)
+        p2 = self.bodies[body2].get_position(et, frame)
         return np.linalg.norm(p1-p2)
 
-    def reference_body(self, name):
+    def reference_body(self, name: str) -> str:
         if name == 'Sun' or name in self.planet_names:
             return 'Sun'
         elif name in self.jupiter_moon_names:
@@ -480,354 +486,337 @@ class DataLoader:
         else:
             myprint(verbose=verbose, text='unrecognized body name: {}'.format(name))
 
-# global state variables
-planet_scale = 1
-ambient = 0.1
-paused = False
-# interaction state variables
-planet_focus_changed = False
-do_tether = False
-saved_relative_position = None
-in_progress = False
-cam_changed = True
-
+def what_day(data, et):
+    return (et-data.schedule.initial_time)/Units.day
 
 '''
 VTK helper functions
 '''
-def get_renderer(window):
-    return window.GetRenderers().GetFirstRenderer()
+class VTKUtils:
+    def get_renderer(window: vtk.vtkRenderWindow) -> vtk.vtkRenderer:
+        return window.GetRenderers().GetFirstRenderer()
 
-def make_point_actor(pos=[0,0,0], color=[1,0,0], size=5):
-    points = vtk.vtkPoints()
-    points.InsertNextPoint(0, 0, 0)
-    verts = vtk.vtkCellArray()
-    verts.InsertNextCell(1)
-    verts.InsertCellPoint(0)
-    polydata = vtk.vtkPolyData()
-    polydata.SetPoints(points)
-    polydata.SetVerts(verts)
-    mapper = vtk.vtkPolyDataMapper()
-    mapper.SetInputData(polydata)
-    mapper.ScalarVisibilityOff()
-    actor = vtk.vtkActor()
-    actor.SetMapper(mapper)
-    actor.SetPosition(pos[0], pos[1], pos[2])
-    actor.GetProperty().SetColor(color[0], color[1], color[2])
-    actor.GetProperty().SetPointSize(size)
-    return actor
-
-def make_curve_actor(pts, color=[0.5, 0.5, 0], size=3):
-    points = vtk.vtkPoints();
-    for p in pts:
-        points.InsertNextPoint(p[0], p[1], p[2])
-    polyline = vtk.vtkPolyLine()
-    polyline.GetPointIds().SetNumberOfIds(len(pts))
-    for i in range(len(pts)):
-        polyline.GetPointIds().SetId(i, i)
-    lines = vtk.vtkCellArray()
-    lines.InsertNextCell(polyline)
-    polydata = vtk.vtkPolyData()
-    polydata.SetPoints(points)
-    polydata.SetLines(lines)
-    mapper = vtk.vtkPolyDataMapper()
-    mapper.SetInputData(polydata)
-    mapper.ScalarVisibilityOff()
-    actor = vtk.vtkActor()
-    actor.SetMapper(mapper)
-    actor.GetProperty().SetLineWidth(size)
-    actor.GetProperty().SetColor(color[0], color[1], color[2])
-    return actor
-
-def add_point_to_curve(curve_actor, point):
-    polydata = curve_actor.GetMapper().GetInput()
-    points = polydata.GetPoints()
-    n = points.GetNumberOfPoints()
-    points.InsertNextPoint(point[0], point[1], point[2])
-    points.GetData().Modified()
-    lines = polydata.GetLines()
-    lines.InsertNextCell(2)
-    lines.InsertCellPoint(n-1)
-    lines.InsertCellPoint(n)
-    lines.GetData().Modified()
-    polydata.SetPoints(points)
-    polydata.SetLines(lines)
-    curve_actor.GetMapper().SetInputData(polydata)
-    curve_actor.GetMapper().Update()
-    return curve_actor
-
-def copy_transformation(actor_from, actor_to):
-    actor_to.SetUserMatrix(actor_from.GetUserMatrix())
-
-def vantage_point(target_name, data, et=clock):
-    if target_name == 'Clipper':
-        myprint(verbose=verbose, text='handling special case of Clipper')
-        p_now = data.clipper_orbit.GetPosition()
-        p_old = data.clipper_orbit.GetPosition(et-2*hour)
-        return { 'pos': p_old, 'focal': p_now, 'up': [0,0,1] }
-    elif target_name == 'Clipper-Venus':
-        return { 'pos': data.clipper_orbit.GetPosition(), 'focal': data.bodies['Venus'].GetPosition(), 'up': [0, 0, 1] }
-    elif target_name == 'Clipper-Earth':
-        return { 'pos': data.clipper_orbit.GetPosition(), 'focal': data.bodies['Earth'].GetPosition(), 'up': [0, 0, 1] }
-    elif target_name == 'Clipper-Mars':
-        return { 'pos': data.clipper_orbit.GetPosition(), 'focal': data.bodies['Mars'].GetPosition(), 'up': [0, 0, 1] }
-    elif target_name == 'Clipper-Jupiter':
-        return { 'pos': data.clipper_orbit.GetPosition(), 'focal': data.bodies['Jupiter'].GetPosition(), 'up': [0, 0, 1] }
-    elif target_name == 'Clipper-Europa':
-        return { 'pos': data.clipper_orbit.GetPosition(), 'focal': data.bodies['Europa'].GetPosition(), 'up': [0, 0, 1] }
-    elif target_name == 'ecliptic':
-        target_pos = data.bodies['Sun'].GetPosition()
-        return { 'pos': target_pos + np.array([0, 0, au_to_km(10)]), 'focal': target_pos, 'up': [0, 1, 0] }
-
-    main_body = data.reference_body(target_name)
-    main_body_pos = data.bodies[main_body].GetPosition()
-    target_pos = data.bodies[target_name].GetPosition()
-    if target_name.upper() == 'SUN':
-        myprint(verbose=verbose, text='handling special case of Sun')
-        dir = target_pos - data.bodies['Earth'].GetPosition()
-    else:
-        dir = target_pos - main_body_pos
-    dir /= np.linalg.norm(dir)
-    radius = data.bodies[target_name].GetMaxRadius()
-    return { 'pos': target_pos - 5*radius*dir, 'focal': target_pos, 'up': [0,0,1] }
-
-def clock_as_str(cl=clock):
-    return spice.timout(cl, 'AP:MN:SC AMPM Month DD, YYYY')
-
-def sun_mercury_distance(data):
-    return data.distance('Mercury', 'Sun', data.schedule.initial_time)
-
-def sun_radius(data):
-    return data.bodies['Sun'].GetMaxRadius()
-
-def get_camera():
-    return get_renderer().GetActiveCamera()
-
-def camera_description(camera):
-    pos = camera.GetPosition()
-    pos_str = '({:06.2f}, {:06.2f}, {:06.2f})'.format(pos[0], pos[1], pos[2])
-    foc = camera.GetFocalPoint()
-    foc_str = '({:06.2f}, {:06.2f}, {:06.2f})'.format(foc[0], foc[1], foc[2])
-    up = camera.GetViewUp()
-    up_str = '({:06.2f}, {:06.2f}, {:06.2f})'.format(up[0], up[1], up[2])
-    return 'p={}, f={}, u={}'.format(pos_str, foc_str, up_str)
-
-def make_rings(texture_filename, rings_info):
-    global ring_actors
-
-    ring_reader = vtk.vtkJPEGReader()
-    ring_reader.SetFileName(texture_filename)
-    ring_texture = vtk.vtkTexture()
-    ring_texture.SetInputConnection(ring_reader.GetOutputPort())
-
-    minR = rings_info['C'][0]
-    maxR = rings_info['A'][1]
-    for ring_name in ['C', 'B', 'A']:
-        inner, outer = rings_info[ring_name]
-        tc = vtk.vtkFloatArray()
-        tc.SetNumberOfComponents(2)
-        source = vtk.vtkDiskSource()
-        source.SetInnerRadius(inner)
-        source.SetOuterRadius(outer)
-        source.SetCircumferentialResolution(90)
-        source.SetRadialResolution(2)
-        source.Update()
-        aring = source.GetOutput()
-        # compute texture coordinates
-        points = aring.GetPoints()
-        for i in range(points.GetNumberOfPoints()):
-            p = points.GetPoint(i)
-            r = math.sqrt(p[0]*p[0] + p[1]*p[1])
-            a = math.atan2(p[1], p[0])
-            y = (r-minR)/(maxR-minR)
-            x = 0.5*a/math.pi
-            tc.InsertNextTuple((y,x))
-        aring.GetPointData().SetTCoords(tc)
+    def make_point_actor(pos=[0,0,0], color=[1,0,0], size=5):
+        points = vtk.vtkPoints()
+        points.InsertNextPoint(0, 0, 0)
+        verts = vtk.vtkCellArray()
+        verts.InsertNextCell(1)
+        verts.InsertCellPoint(0)
+        polydata = vtk.vtkPolyData()
+        polydata.SetPoints(points)
+        polydata.SetVerts(verts)
         mapper = vtk.vtkPolyDataMapper()
-        mapper.SetInputData(aring)
+        mapper.SetInputData(polydata)
+        mapper.ScalarVisibilityOff()
         actor = vtk.vtkActor()
         actor.SetMapper(mapper)
-        actor.SetTexture(ring_texture)
-        ring_actors.append(actor)
+        actor.SetPosition(pos[0], pos[1], pos[2])
+        actor.GetProperty().SetColor(color[0], color[1], color[2])
+        actor.GetProperty().SetPointSize(size)
+        return actor
 
-def make_ecliptic_plane(data):
-    global all_actors
-    global ecliptic_actors
+    def make_curve_actor(pts: List[List[float]], color=[0.5, 0.5, 0], size=3):
+        points = vtk.vtkPoints();
+        for p in pts:
+            points.InsertNextPoint(p[0], p[1], p[2])
+        polyline = vtk.vtkPolyLine()
+        polyline.GetPointIds().SetNumberOfIds(len(pts))
+        for i in range(len(pts)):
+            polyline.GetPointIds().SetId(i, i)
+        lines = vtk.vtkCellArray()
+        lines.InsertNextCell(polyline)
+        polydata = vtk.vtkPolyData()
+        polydata.SetPoints(points)
+        polydata.SetLines(lines)
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputData(polydata)
+        mapper.ScalarVisibilityOff()
+        actor = vtk.vtkActor()
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetLineWidth(size)
+        actor.GetProperty().SetColor(color[0], color[1], color[2])
+        return actor
 
-    ecliptic = vtk.vtkRegularPolygonSource()
-    ecliptic.SetCenter(0,0,0)
-    ecliptic.SetNumberOfSides(500)
-    ecliptic.SetRadius(data.distance('Neptune', 'Sun', data.schedule.initial_time))
-    mapper = vtk.vtkPolyDataMapper()
-    mapper.SetInputConnection(ecliptic.GetOutputPort())
-    actor = vtk.vtkActor()
-    actor.SetMapper(mapper)
-    actor.GetProperty().SetColor(0,0.2,1)
-    actor.GetProperty().SetOpacity(0.05)
-    actor.GetProperty().SetAmbient(1)
-    all_actors['ecliptic plane'] = actor
-    ecliptic_actors.append(actor)
-    frame = vtk.vtkRegularPolygonSource()
-    frame.SetCenter(0,0,0)
-    frame.SetNumberOfSides(500)
-    frame.SetRadius(data.distance('Neptune', 'Sun', data.schedule.initial_time))
-    frame.GeneratePolygonOff()
-    f_mapper = vtk.vtkPolyDataMapper()
-    f_mapper.SetInputConnection(frame.GetOutputPort())
-    f_actor = vtk.vtkActor()
-    f_actor.SetMapper(f_mapper)
-    f_actor.GetProperty().SetColor(0,0.2,1)
-    f_actor.GetProperty().SetOpacity(0.1)
-    f_actor.GetProperty().SetAmbient(1)
-    f_actor.GetProperty().SetLineWidth(2)
-    f_actor.GetProperty().RenderLinesAsTubesOn()
-    all_actors['ecliptic contour'] = f_actor
-    ecliptic_actors.append(f_actor)
+    def add_point_to_curve(curve_actor: vtk.vtkActor, point: List[float]) -> vtk.vtkActor:
+        polydata = curve_actor.GetMapper().GetInput()
+        points = polydata.GetPoints()
+        n = points.GetNumberOfPoints()
+        points.InsertNextPoint(point[0], point[1], point[2])
+        points.GetData().Modified()
+        lines = polydata.GetLines()
+        lines.InsertNextCell(2)
+        lines.InsertCellPoint(n-1)
+        lines.InsertCellPoint(n)
+        lines.GetData().Modified()
+        polydata.SetPoints(points)
+        polydata.SetLines(lines)
+        curve_actor.GetMapper().SetInputData(polydata)
+        curve_actor.GetMapper().Update()
+        return curve_actor
 
-def make_orbits(data):
-    global orbit_actors
-    global all_actors
+    def copy_transformation(actor_from: vtk.vtkActor, actor_to: vtk.vtkActor):
+        actor_to.SetUserMatrix(actor_from.GetUserMatrix())
 
-    sched = data.schedule
+    def vantage_point(target_name: str, data: DataLoader, et: int) -> Dict[str, List[float]]:
+        if target_name == 'Clipper':
+            myprint(verbose=verbose, text='handling special case of Clipper')
+            p_now = data.full_paths['clipper'].get_position(et)
+            p_old = data.full_paths['clipper'].get_position(et-2*Units.hour)
+            return { 'pos': p_old, 'focal': p_now, 'up': [0,0,1] }
+        elif target_name == 'Clipper-Venus':
+            return { 'pos': data.full_paths['clipper'].get_position(et), 'focal': data.bodies['Venus'].get_position(et), 'up': [0, 0, 1] }
+        elif target_name == 'Clipper-Earth':
+            return { 'pos': data.full_paths['clipper'].get_position(et), 'focal': data.bodies['Earth'].get_position(et), 'up': [0, 0, 1] }
+        elif target_name == 'Clipper-Mars':
+            return { 'pos': data.full_paths['clipper'].get_position(et), 'focal': data.bodies['Mars'].get_position(et), 'up': [0, 0, 1] }
+        elif target_name == 'Clipper-Jupiter':
+            return { 'pos': data.full_paths['clipper'].get_position(et), 'focal': data.bodies['Jupiter'].get_position(et), 'up': [0, 0, 1] }
+        elif target_name == 'Clipper-Europa':
+            return { 'pos': data.full_paths['clipper'].get_position(et), 'focal': data.bodies['Europa'].get_position(et), 'up': [0, 0, 1] }
+        elif target_name == 'ecliptic':
+            target_pos = data.bodies['Sun'].get_position(et)
+            return { 'pos': target_pos + np.array([0, 0, Units.au_to_km(10)]), 'focal': target_pos, 'up': [0, 1, 0] }
 
-    body_groups = [ [ data.planet_names, day ], [ data.jupiter_moon_names, hour ] ]
-    for names, period in body_groups:
-        for name in names:
-            myprint(verbose=verbose, text=' * {}'.format(name))
-            body = data.bodies[name]
-            points = []
-            for t in np.arange(sched.initial_time, sched.initial_time + min(1.01*data.orbital_period[name], sched.final_time-sched.initial_time), period):
-                points.append(body.GetPosition(t))
-            actor = make_curve_actor(points, data.planet_colors[name], 2)
-            orbit_actors[name] = actor
-            all_actors['orbit of ' + name] = actor
-    myprint(verbose=verbose, text=' * Clipper')
-    intp = interpolate.make_interp_spline(x=data.etclipper, y=data.clipper_full)
-    points = []
-    for t in np.arange(sched.initial_time, sched.final_time, hour):
-        points.append(intp(t))
-    actor = make_curve_actor(points, [0.3, 0, 0], 0.25)
-    orbit_actors['Clipper'] = actor
-    all_actors['orbit of Clipper'] = actor
+        main_body = data.reference_body(target_name)
+        main_body_pos = data.bodies[main_body].get_position(et)
+        target_pos = data.bodies[target_name].get_position(et)
+        if target_name.upper() == 'SUN':
+            myprint(verbose=verbose, text='handling special case of Sun')
+            dir = target_pos - data.bodies['Earth'].get_position(et)
+        else:
+            dir = target_pos - main_body_pos
+        dir /= np.linalg.norm(dir)
+        radius = data.bodies[target_name].get_max_radius()
+        return { 'pos': target_pos - 5*radius*dir, 'focal': target_pos, 'up': [0,0,1] }
 
-def focal_vector():
-    cam = get_camera()
-    p = np.array(cam.GetPosition())
-    f = np.array(cam.GetFocalPoint())
-    return f-p
+    def clock_as_str(cl: int) -> str:
+        return spice.timout(cl, 'AP:MN:SC AMPM Month DD, YYYY')
 
-def print_camera():
-    cam = get_camera()
-    settings = {
-        'from' : cam.GetPosition(),
-        'to'   : cam.GetFocalPoint(),
-        'up'   : cam.GetViewUp(),
-        'clip' : cam.GetClippingRange(),
-        'view' : cam.GetViewAngle()
-    }
-    txt = json.dump(settings)
-    print(txt)
+    def sun_mercury_distance(data: DataLoader) -> float:
+        return data.distance('Mercury', 'Sun', data.schedule.initial_time)
 
-def read_camera(str):
-    cam = get_camera()
-    settings = json.load(str)
-    if 'from' in settings:
-        cam.SetPosition(settings['from'])
-    if 'to' in settings:
-        cam.SetFocalPoint(settings['to'])
-    if 'up' in settings:
-        cam.SetViewUp(settings['up'])
-    if 'clip' in settings:
-        cam.SetClippingRange(settings['clip'])
-    if 'view' in settings:
-        cam.SetViewAngle(settings['view'])
+    def sun_radius(data: DataLoader) -> float:
+        return data.bodies['Sun'].get_max_radius()
 
-def focal_distance():
-    return np.linalg.norm(focal_vector())
+    def get_camera(window: vtk.vtkRenderWindow) -> vtk.vtkRenderer:
+        return VTKUtils.get_renderer(window).GetActiveCamera()
 
-# Class to manage date
-class date:
-    def __init__(self, clock, window):
-        self.clock = clock
-        self.window = window
-    def update(self, obj, event, data):
-        et = obj.GetRepresentation().GetValue()
-        self.clock = et*hour + data.etb[0]
-        renderer = get_renderer(self.window)
-        renderer.RemoveActor(data.clipper_orbit.orbit_actor)
-        renderer.RemoveActor(data.clipper_orbit.position_actor)
-        renderer.RemoveActor(data.clipper_orbit.launch_orbit_actor)
-        # renderer.RemoveActor(clipper_orbit.launch_site_curve_actor)
-        data.clipper_orbit = ClipperOrbit()
-        renderer.AddActor(data.clipper_orbit.orbit_actor)
-        renderer.AddActor(data.clipper_orbit.position_actor)
-        renderer.AddActor(data.clipper_orbit.launch_orbit_actor)
+    def camera_description(camera: vtk.vtkCamera) -> str:
+        pos = camera.GetPosition()
+        pos_str = '({:06.2f}, {:06.2f}, {:06.2f})'.format(pos[0], pos[1], pos[2])
+        foc = camera.GetFocalPoint()
+        foc_str = '({:06.2f}, {:06.2f}, {:06.2f})'.format(foc[0], foc[1], foc[2])
+        up = camera.GetViewUp()
+        up_str = '({:06.2f}, {:06.2f}, {:06.2f})'.format(up[0], up[1], up[2])
+        return 'p={}, f={}, u={}'.format(pos_str, foc_str, up_str)
+
+    # Return: ring_actors 
+    # actors corresponding to major ring groups
+    def make_rings(data: DataLoader) -> List[vtk.vtkActor]:
+        ring_reader = vtk.vtkJPEGReader()
+        ring_reader.SetFileName(data.texture_files['Rings'])
+        ring_texture = vtk.vtkTexture()
+        ring_texture.SetInputConnection(ring_reader.GetOutputPort())
+
+        rings_info = data.saturn_rings
+        minR = rings_info['C'][0]
+        maxR = rings_info['A'][1]
+        ring_actors = []
+        for ring_name in ['C', 'B', 'A']:
+            inner, outer = rings_info[ring_name]
+            tc = vtk.vtkFloatArray()
+            tc.SetNumberOfComponents(2)
+            source = vtk.vtkDiskSource()
+            source.SetInnerRadius(inner)
+            source.SetOuterRadius(outer)
+            source.SetCircumferentialResolution(90)
+            source.SetRadialResolution(2)
+            source.Update()
+            aring = source.GetOutput()
+            # compute texture coordinates
+            points = aring.GetPoints()
+            for i in range(points.GetNumberOfPoints()):
+                p = points.GetPoint(i)
+                r = math.sqrt(p[0]*p[0] + p[1]*p[1])
+                a = math.atan2(p[1], p[0])
+                y = (r-minR)/(maxR-minR)
+                x = 0.5*a/math.pi
+                tc.InsertNextTuple((y,x))
+            aring.GetPointData().SetTCoords(tc)
+            mapper = vtk.vtkPolyDataMapper()
+            mapper.SetInputData(aring)
+            actor = vtk.vtkActor()
+            actor.SetMapper(mapper)
+            actor.SetTexture(ring_texture)
+            ring_actors.append(actor)
+        return ring_actors
+
+    # Return: actor_plane, actor_perimeter
+    # Ecliptic disk and surrounding perimeter
+    def make_ecliptic_plane(data: DataLoader) -> List[vtk.vtkActor]:
+        ecliptic_actors = []
+        ecliptic = vtk.vtkRegularPolygonSource()
+        ecliptic.SetCenter(0,0,0)
+        ecliptic.SetNumberOfSides(500)
+        ecliptic.SetRadius(data.distance('Neptune', 'Sun', data.schedule.initial_time))
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputConnection(ecliptic.GetOutputPort())
+        actor = vtk.vtkActor()
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetColor(0,0.2,1)
+        actor.GetProperty().SetOpacity(0.05)
+        actor.GetProperty().SetAmbient(1)
+        ecliptic_actors.append(actor)
+        frame = vtk.vtkRegularPolygonSource()
+        frame.SetCenter(0,0,0)
+        frame.SetNumberOfSides(500)
+        frame.SetRadius(data.distance('Neptune', 'Sun', data.schedule.initial_time))
+        frame.GeneratePolygonOff()
+        f_mapper = vtk.vtkPolyDataMapper()
+        f_mapper.SetInputConnection(frame.GetOutputPort())
+        f_actor = vtk.vtkActor()
+        f_actor.SetMapper(f_mapper)
+        f_actor.GetProperty().SetColor(0,0.2,1)
+        f_actor.GetProperty().SetOpacity(0.1)
+        f_actor.GetProperty().SetAmbient(1)
+        f_actor.GetProperty().SetLineWidth(2)
+        f_actor.GetProperty().RenderLinesAsTubesOn()
+        return actor, f_actor
+
+    # Return: orbit_actors
+    # Dictionary associated body name to trajectory depiction actor
+    def make_orbits(data: DataLoader) -> Dict[str, vtk.vtkActor]:
+        orbit_actors = {}
+        sched = data.schedule
+        body_groups = [ [ data.planet_names, Units.day ], [ data.jupiter_moon_names, Units.hour ] ]
+        for names, period in body_groups:
+            for name in names:
+                myprint(verbose=verbose, text=' * {}'.format(name))
+                body = data.bodies[name]
+                points = []
+                for t in np.arange(sched.initial_time, sched.initial_time + min(1.01*data.orbital_period[name], sched.final_time-sched.initial_time), period):
+                    points.append(body.get_position(t))
+                actor = VTKUtils.make_curve_actor(points, data.planet_colors[name], 2)
+                orbit_actors[name] = actor
+        myprint(verbose=verbose, text=' * Clipper')
+        intp = interpolate.make_interp_spline(x=data.schedule.mission_timeline, y=data.full_paths['clipper'])
+        points = []
+        for t in np.arange(sched.initial_time, sched.final_time, Units.hour):
+            points.append(intp(t))
+        actor = VTKUtils.make_curve_actor(points, [0.3, 0, 0], 0.25)
+        orbit_actors['Clipper'] = actor
+        return orbit_actors
+
+    # Return vector from view point to focal point
+    def focal_vector(camera: vtk.vtkCamera) -> np.ndarray:
+        p = np.array(camera.GetPosition())
+        f = np.array(camera.GetFocalPoint())
+        return f-p
+
+    # Print settings of provided camera
+    def print_camera(camera: vtk.vtkCamera):
+        settings = {
+            'from' : camera.GetPosition(),
+            'to'   : camera.GetFocalPoint(),
+            'up'   : camera.GetViewUp(),
+            'clip' : camera.GetClippingRange(),
+            'view' : camera.GetViewAngle()
+        }
+        txt = json.dump(settings)
+        print(txt)
+
+    # Return camera imported from file
+    def read_camera(name: str) -> vtk.vtkActor:
+        settings = json.load(str)
+        camera = vtk.vtkCamera()
+        if 'from' in settings:
+            camera.SetPosition(settings['from'])
+        if 'to' in settings:
+            camera.SetFocalPoint(settings['to'])
+        if 'up' in settings:
+            camera.SetViewUp(settings['up'])
+        if 'clip' in settings:
+            camera.SetClippingRange(settings['clip'])
+        if 'view' in settings:
+            camera.SetViewAngle(settings['view'])
+        return camera
+
+    # Return length of focal vector
+    def focal_distance(camera: vtk.vtkCamera) -> float:
+        return np.linalg.norm(VTKUtils.focal_vector(camera))
 
 # Class to encapsulate various aspects of the simulation state
 class SimulationState:
-    def __init__(self, params, time_step, scale, date):
+    def __init__(self, params: Dict[str, Any], time_step: float, clock: float):
         self.params = params
         self.time_step = time_step
-        self.planet_scale = scale
-        self.date = date
+        self.clock = clock
+        self.planet_focus_changed = True
+        self.saved_relative_position = False 
 
 # Class to encapsulate various graphical elements of the visualization
 class GraphicsObjects:
-    def __init__(self, window, text_actor_body, orbit_actors, ring_actors):
+    def __init__(self, window: vtk.vtkRenderWindow, all_actors: Dict[str, List[vtk.vtkActor]], resize: vtk.vtkImageResize):
         self.window = window
-        self.text_actor_body = text_actor_body
-        self.orbit_actors = orbit_actors
-        self.ring_actors = ring_actors
+        self.all_actors = all_actors
+        self.resize = resize
+        self.renderers = None
+        self.frame_counter = 0
 
 # Overarching class that contains and controls all aspects of the simulation
 # and visualization
 class Simulation:
-    def __init__(self, state, data, graphics):
+    def __init__(self, state: SimulationState, data: DataLoader, graphics: GraphicsObjects):
         self.state = state
         self.data = data
         self.graphics = graphics
+        self.render_window = self.graphics.window
 
     '''
     Series of callback functions to affect the variables of the simulation
     '''
     def key_pressed_cb(self, obj, event):
+        print('key pressed')
+        print(f'current Saturn position is {self.graphics.all_actors["bodies"]["Saturn"].GetPosition()}')
+        print(f'current Earth position is {self.graphics.all_actors["bodies"]["Earth"].GetPosition()}')
+        print(f'current ring positions are {self.graphics.all_actors["rings"][0].GetPosition()}')
         new_key = obj.GetKeySym()
         if new_key.isdigit():
             key = int(new_key)
-            if key <= 8 and self.data.all_body_names[key] != self.state.focus_planet:
-                myprint(verbose=True, text='changing focus from {} to {}'.format(self.state.focus_planet, self.data.all_body_names[key]))
-                self.state.focus_planet = self.data.all_body_names[key]
+            if key <= 8 and self.data.all_body_names[key] != self.state.params.planet_focus:
+                myprint(verbose=True, text='changing focus from {} to {}'.format(self.state.params.planet_focus, self.data.all_body_names[key]))
+                self.state.params.planet_focus = self.data.all_body_names[key]
                 self.state.planet_focus_changed = True
                 self.state.saved_relative_position = False
-                self.state.do_tether = True
-                cam_setting = vantage_point(self.state.focus_planet)
-                get_camera().SetPosition(cam_setting['pos'])
-                get_camera().SetFocalPoint(cam_setting['focal'])
-                get_camera().SetViewUp(cam_setting['up'])
-                self.graphics.text_actor_body.SetInput('Current Focus: {}'.format(self.state.focus_planet))
+                self.state.params.do_tether = True
+                cam_setting = VTKUtils.vantage_point(target_name=self.state.params.planet_focus, data=self.data, et=self.state.clock)
+                VTKUtils.get_camera(self.graphics.window).SetPosition(cam_setting['pos'])
+                VTKUtils.get_camera(self.graphics.window).SetFocalPoint(cam_setting['focal'])
+                VTKUtils.get_camera(self.graphics.window).SetViewUp(cam_setting['up'])
+                self.graphics.all_actors['text']['bodies'].SetInput('Current Focus: {}'.format(self.state.params.planet_focus))
 
             # Overrides the default vtk behavior for keypress '3'
             if int(new_key) == 3:
                 self.graphics.window.StereoRenderOn()
         elif new_key == 'minus':
-            self.state.focus_planet = 'N/A'
+            self.state.params.planet_focus = 'N/A'
             self.state.planet_focus_changed = False
-            self.graphics.text_actor_body.SetInput('Current Focus: None')
-            self.state.do_tether = False
+            self.graphics.all_actors['text']['bodies'].SetInput('Current Focus: None')
+            self.state.params.do_tether = False
         elif new_key == 'o' or new_key == 'O':
-            self.state.show_orbits = not self.state.show_orbits
-            if self.state.show_orbits:
+            self.state.params.show_orbits = not self.state.params.show_orbits
+            if self.state.params.show_orbits:
                 myprint(verbose=True, text='now showing orbits')
-                for name in self.graphics.orbit_actors:
-                    if self.state.clock < self.data.etarrive and name in self.data.jupiter_moon_names:
+                for name in self.graphics.all_actors['orbits']:
+                    if self.state.clock < self.data.schedule.arrival_time and name in self.data.jupiter_moon_names:
                         continue
                     myprint(verbose=True, text='added orbit of {}'.format(name))
-                    myprint(verbose=True, text='there are {} vertices in this orbit'.format(self.graphics.orbit_actors[name].GetMapper().GetInput().GetPoints().GetNumberOfPoints()))
-                    get_renderer(self.graphics.window).AddActor(self.graphics.orbit_actors[name])
+                    myprint(verbose=True, text='there are {} vertices in this orbit'.format(self.graphics.all_actors['orbits'][name].GetMapper().GetInput().GetPoints().GetNumberOfPoints()))
+                    VTKUtils.get_renderer(self.graphics.window).AddActor(self.graphics.all_actors['orbits'][name])
             else:
                 myprint(verbose=True, text='now hiding orbits')
-                for name in self.graphics.orbit_actors:
-                    get_renderer(self.graphics.window).RemoveActor(self.graphics.orbit_actors[name])
+                for name in self.graphics.all_actors['orbits']:
+                    VTKUtils.get_renderer(self.graphics.window).Remove_actor(self.graphics.all_actors['orbits'][name])
             self.graphics.window.Render()
         elif new_key == 'f':
             if self.graphics.window.GetFullScreen():
@@ -839,7 +828,7 @@ class Simulation:
              or new_key == 'v' or new_key == 'a' or new_key == 'b' or new_key == 'c' \
              or new_key == 'd' or new_key == 'g' or new_key == 'semicolon' \
              or new_key == 'quoteright' or new_key == 'k':
-            self.state.new_focus_planet = self.state.focus_planet
+            self.state.new_focus_planet = self.state.params.planet_focus
             if new_key == 'exclam':
                 self.state.new_focus_planet = 'Io'
             elif new_key == 'at':
@@ -869,35 +858,35 @@ class Simulation:
             elif new_key == 'g':
                 self.state.new_focus_planet = 'Clipper-Venus'
             elif new_key == 'semicolon':
-                self.state.zoom_factor /= 2.0
+                self.state.params.zoom_factor /= 2.0
             elif new_key == 'quoteright':
-                self.state.zoom_factor *= 2.0
+                self.state.params.zoom_factor *= 2.0
             elif new_key == 'k':
-                print_camera(self.graphics.window)
+                VTKUtils.print_camera(self.graphics.window)
                 return
-            if self.state.new_focus_planet != self.state.focus_planet:
-                self.state.focus_planet = self.state.new_focus_planet.split()[0]
+            if self.state.new_focus_planet != self.state.params.planet_focus:
+                self.state.params.planet_focus = self.state.new_focus_planet.split()[0]
                 self.state.planet_focus_changed = True
                 self.state.saved_relative_position = False
-                self.state.do_tether = True
-                camera = get_camera(self.graphics.window)
-                cam_setting = vantage_point(focus_planet)
+                self.state.params.do_tether = True
+                camera = VTKUtils.get_camera(self.graphics.window)
+                cam_setting = VTKUtils.vantage_point(target_name=self.state.params.planet_focus, data=self.data, et=self.state.clock)
                 camera.SetPosition(cam_setting['pos'])
                 camera.SetFocalPoint(cam_setting['focal'])
                 camera.SetViewUp(cam_setting['up'])
-                text_actor_body.SetInput('Current Focus: {}'.format(self.state.focus_planet))
-            camera = get_camera(self.graphics.window)
-            if self.state.zoom_factor != 1:
-                camera.Zoom(self.state.zoom_factor)
-                self.state.zoom_factor = 1
+                self.graphics.all_actors['text']['title'].SetInput('Current Focus: {}'.format(self.state.params.planet_focus))
+            camera = VTKUtils.get_camera(self.graphics.window)
+            if self.state.params.zoom_factor != 1:
+                camera.Zoom(self.state.params.zoom_factor)
+                self.state.params.zoom_factor = 1
                 myprint(verbose=True, text='camera view angle: {}'.format(camera.GetViewAngle()))
         elif new_key == 't':
             # tether mode
-            if not self.state.do_tether:
-                self.state.do_tether = True
+            if not self.state.params.do_tether:
+                self.state.params.do_tether = True
                 myprint(verbose=True, text='tethering activated')
             else:
-                self.state.do_tether = False
+                self.state.params.do_tether = False
                 self.state.saved_relative_position = None
                 myprint(verbose=True, text='tethering deactivated')
         elif new_key == 'h':
@@ -918,234 +907,325 @@ class Simulation:
         else:
             myprint(verbose=verbose, text='unrecognized entered key is {}'.format(new_key))
 
-    def time_step_cb(self, obj, event):
-        value = obj.GetRepresentation().GetValue()
-        self.state.time_step = float(value*hour)/self.state.params.refresh_rate
+    def time_step_change_cb(self, value):
+        print('time step change')
+        self.state.time_step = float(value*Units.hour)/self.state.params.refresh_rate
+        print(f'time step is now {self.state.time_step}')
 
-    def planet_scale_cb(self, obj, event):
-        self.state.planet_scale = obj.GetRepresentation().GetValue()
+    def planet_scale_change_cb(self, value):
+        print('planet scale change')
+        self.state.params.planet_scale = value
         for name in self.data.bodies.keys():
             body = self.data.bodies[name]
-            if name == 'Sun' and self.state.planet_scale > self.params.sun_max:
-                body.ScaleActor(self.params.sun_max)
+            if name == 'Sun' and self.state.params.planet_scale > self.state.params.max_sun_scale:
+                body.scale_actor(self.state.params.max_sun_scale)
             else:
-                body.ScaleActor(self.planet_scale)
+                body.scale_actor(self.state.params.planet_scale)
         # adjust Saturn rings accordingly
-        for actor in self.graphics.ring_actors:
-            actor.SetScale(self.state.planet_scale, self.state.planet_scale, self.state.planet_scale)
+        for actor in self.graphics.all_actors['rings']:
+            actor.SetScale(self.state.params.planet_scale, self.state.params.planet_scale, self.state.params.planet_scale)
+        self.graphics.window.Render()
 
-    def window_resized_cb(self, obj, event):
+    def window_size_change_cb(self, obj, event):
+        print('window size change')
         width, height = self.graphics.window.GetSize()
         if self.state.params.resolution[0] != width or self.state.params.resolution[1] != height:
             self.state.params.resolution[0] = width
             self.state.params.resolution[1] = height
-            resize_image.SetOutputDimensions(self.state.params.resolution[0], self.state.params.resolution[1], 0)
-            resize_image.Update()
-            myprint(verbose=verbose, text='texture has been resized')
+            if not self.state.params.shadow:
+                self.graphics.resize.SetOutputDimensions(self.state.params.resolution[0], self.state.params.resolution[1], 0)
+                self.graphics.resize.Update()
+                myprint(verbose=verbose, text='texture has been resized')
             self.graphics.window.Render()
 
-    def camera_modif_cb(self, caller, event):
+    def camera_change_cb(self, caller, event):
+        print('camera change')
         if not self.state.params.in_progress:
             self.state.params.cam_changed = True
 
     def interaction_start_cb(self, caller, event):
+        print('interaction starts')
         if self.state.params.do_tether:
             self.state.params.paused = True
 
-    def interaction_end_callback(self, caller, event):
+    def interaction_end_cb(self, caller, event):
+        print('interaction ends')
         if self.state.params.do_tether:
             self.state.params.paused = False
 
-    def timer_cb(self, obj, event):
-        cam = render_window.GetRenderers().GetFirstRenderer().GetActiveCamera()
+    def date_change_cb(self, value):
+        current = self.state.clock
+        et = value
+        self.state.clock = et*Units.hour + self.data.schedule.initial_time
+
+        renderer = VTKUtils.get_renderer(self.render_window)
+        renderer.RemoveActor(self.graphics.all_actors['clipper orbit'])
+        renderer.RemoveActor(self.graphics.all_actors['clipper position'])
+        # renderer.RemoveActor(data.full_paths['clipper'].launch_orbit_actor)
+        # renderer.RemoveActor(data.full_paths['clipper'].launch_site_curve_actor)
+        self.data.clipper = Clipper(self.data, self.state.clock)
+        renderer.AddActor(self.data.clipper.orbit_actor)
+        renderer.AddActor(self.data.clipper.position_actor)
+        # renderer.AddActor(self.data.full_paths['clipper'].launch_orbit_actor)
+        # renderer.AddActor(data.full_paths['clipper'].launch_site_curve_actor)
+
+    # function called at every step of the internal clock of the simulation
+    def timer_cb(self, obj, value):
+        camera = self.graphics.renderers['bodies'].GetActiveCamera()
+        print('timer callback: clock={}'.format(self.state.clock))
+        cam = self.render_window.GetRenderers().GetFirstRenderer().GetActiveCamera()
         if self.state.params.paused:
             return
-        clock = self.state.date
-        timestr = clock_as_str(clock)
-            if clock >= self.data.schedule.final_time:
+        clock = self.state.clock
+        timestr = VTKUtils.clock_as_str(clock)
+        # print(f'time string is {timestr}')
+        if clock >= self.data.schedule.final_time:
             return
-        current_focal_vector = focal_vector()
+        current_focal_vector = VTKUtils.focal_vector(camera)
+        # print(f'current focal vector is {current_focal_vector}')
         # Update camera for currently selected planet
+        # print(f'focus planet = {self.state.params.focus_planet}')
         if self.state.params.focus_planet != 'N/A':
             # tether the camera position to the moving planet to maintain the relative position
             # that it has at the beginning or after a user change to the camera
             self.state.params.show_clipper_orbit = True
             self.state.params.in_progress = True
-            if self.state.focus_planet.split()[0] == 'Clipper':
-                new_body_pos = self.data.clipper_orbit.GetPosition(clock)
-            elif focus_planet == 'Clipper-Earth':
-                new_body_pos = self.data.bodies['Earth'].GetPosition(clock)
-            elif focus_planet == 'Clipper-Mars':
-                new_body_pos = self.data.bodies['Mars'].GetPosition(clock)
-            elif focus_planet == 'Clipper-Jupiter':
-                new_body_pos = self.data.bodies['Jupiter'].GetPosition(clock)
-            elif focus_planet == 'Clipper-Europa':
-                new_body_pos = self.data.bodies['Europa'].GetPosition(clock)
-            elif focus_planet == 'Clipper-Venus':
-                new_body_pos = self.data.bodies['Venus'].GetPosition(clock)
-            elif focus_planet != 'ecliptic':
-                new_body_pos = self.data.bodies[focus_planet].GetPosition(clock)
+            if self.state.params.focus_planet.split()[0] == 'Clipper':
+                new_body_pos = self.data.full_paths['clipper'].get_position(clock)
+            elif self.state.params.focus_planet == 'Clipper-Earth':
+                new_body_pos = self.data.bodies['Earth'].get_position(clock)
+            elif self.state.params.focus_planet == 'Clipper-Mars':
+                new_body_pos = self.data.bodies['Mars'].get_position(clock)
+            elif self.state.params.focus_planet == 'Clipper-Jupiter':
+                new_body_pos = self.data.bodies['Jupiter'].get_position(clock)
+            elif self.state.params.focus_planet == 'Clipper-Europa':
+                new_body_pos = self.data.bodies['Europa'].get_position(clock)
+            elif self.state.params.focus_planet == 'Clipper-Venus':
+                new_body_pos = self.data.bodies['Venus'].get_position(clock)
+            elif self.state.params.focus_planet != 'ecliptic':
+                new_body_pos = self.data.bodies[self.state.params.focus_planet].get_position(
+                    clock)
             else:
-                new_body_pos = self.data.bodies['Sun'].GetPosition(clock)
-            self.graphics.camera.SetFocalPoint(new_body_pos)
+                new_body_pos = self.data.bodies['Sun'].get_position(clock)
+            camera.SetFocalPoint(new_body_pos)
             self.state.params.in_progress = False
             if self.state.params.focus_planet == 'Clipper-Earth' or \
                 self.state.params.focus_planet == 'Clipper-Mars' or \
                 self.state.params.focus_planet == 'Clipper-Jupiter' or \
                 self.state.params.focus_planet == 'Clipper-Europa' or \
                 self.state.params.focus_planet == 'Clipper-Venus':
-                self.state.params.show_clipper_orbit = False
+                self.state.params.show_data.full_paths['clipper'] = False
                 planet_name = self.state.params.focus_planet[8:]
-                clipper_new_pos = clipper_orbit.GetPosition(clock)
+                clipper_new_pos = self.data.full_paths['clipper'].get_position(clock)
                 self.state.params.do_tether = False
                 self.state.params.in_progress = True
                 self.graphics.camera.SetPosition(clipper_new_pos)
                 self.state.params.in_progress = False
                 self.text.SetInput('Current Focus: {}'.format(self.state.params.focus_planet))
             else:
-                cam_pos = np.array(self.graphics.camera.GetPosition())
-                self.graphics.text_actor_time.SetInput('Current Focus: ' + self.state.params.focus_planet)
+                cam_pos = np.array(camera.GetPosition())
+                self.graphics.all_actors['text']['bodies'].SetInput('Current Focus: ' + self.state.params.focus_planet)
                 if self.state.params.do_tether:
                     if self.state.params.saved_relative_position is None or self.state.params.cam_changed:
                         self.state.params.saved_relative_position = current_focal_vector
                         self.state.params.cam_changed = False
                     self.state.params.in_progress = True
-                    self.graphics.camera.SetPosition(new_body_pos - self.state.params.saved_relative_position)
+                    camera.SetPosition(new_body_pos - self.state.params.saved_relative_position)
                     self.state.params.in_progress = False
 
         for name in self.data.all_body_names:
+            # print(f'updating position of {name}')
             body = self.data.bodies[name]
             # Update position and rotation
-            self.graphics.body_actors[name] = body.MoveActor(clock)
-            self.graphics.body_point_actors[name] = body.MovePointActor(clock)
+            self.graphics.all_actors['bodies'][name] = body.move_actor(clock)
+            self.graphics.all_actors['points'][name] = body.move_point_actor(clock)
             if name == 'Saturn':
-                for ra in self.graphics.ring_actors:
-                    ra.SetPosition(self.graphics.body_actors['Saturn'].GetPosition())
-                    copy_transformation(body.GetActor(), ra)
+                for ra in self.graphics.all_actors['rings']:
+                    # ra.SetPosition(self.graphics.all_actors['bodies']['Saturn'].GetPosition())
+                    VTKUtils.copy_transformation(body.get_actor(), ra)
 
         # extend Clipper's orbit
-        self.data.clipper_orbit.Update(clock)
+        self.data.clipper.update(clock)
 
-
-        self.graphics.time_display.SetInput(timestr)
-        self.graphics.time_widget.GetRepresentation().SetValue((clock-self.data.etb[0])/hour)
-        obj.GetRenderWindow().GetRenderers().GetFirstRenderer().RemoveActor(self.data.clipper_orbit.orbit_actor)
+        self.graphics.all_actors['text']['time'].SetInput(timestr)
+        obj.GetRenderWindow().GetRenderers().GetFirstRenderer().RemoveActor(self.data.clipper.orbit_actor)
         if self.state.params.show_clipper_orbit:
-            obj.GetRenderWindow().GetRenderers().GetFirstRenderer().AddActor(self.data.clipper_orbit.orbit_actor)
+            obj.GetRenderWindow().GetRenderers().GetFirstRenderer().AddActor(self.data.clipper.orbit_actor)
         obj.GetRenderWindow().Render()
 
         if not self.state.params.paused:
-            self.state.date += time_step
+            # print('state is not paused: incrementing')
+            self.state.clock += self.state.params.time_step
+        else:
+            print('state is paused')
 
-class ClipperMission(QMainWindow):
+    def screenshot_cb(self):
+        # ---------------------------------------------------------------
+        # Save current contents of render window to PNG file
+        # ---------------------------------------------------------------
+        file_name = 'screenshot' + str(self.graphics.frame_counter).zfill(5) + ".png"
+        image = vtk.vtkWindowToImageFilter()
+        image.SetInput(self.graphics.window)
+        png_writer = vtk.vtkPNGWriter()
+        png_writer.SetInputConnection(image.GetOutputPort())
+        png_writer.SetFileName(file_name)
+        self.graphics.window.Render()
+        png_writer.Write()
+        self.graphics.frame_counter += 1
+
+class MainWindow(QMainWindow):
     def __init__(self, parent = None):
         QMainWindow.__init__(self, parent)
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
-        self.mission = None
+        self.mission_state = None
+        self.mission_data = None
+        self.clipper_mission = None
+        print('Main window initialized')
 
-    def main(args):
+    def timer_callback(self):
+        print('in timer callback')
+        self.ui.slider_date.setValue(int((self.mission_state.clock-self.mission_data.schedule.initial_time)/Units.hour))
+        self.clipper_mission.timer_cb(obj=None, event=None)
 
-
+    def main(self, args):
+        verbose = args.verbose
+        ''' Mission Data '''
+        print('creating mission data')
+        self.mission_data = DataLoader(media_path=args.media_path, naif_path=args.naif_path, scale=args.scale)
+        print('mission data created')
 
         # Timer Frequency
-        refresh_rate = 5  # Hz
-        timer_period = 1000/refresh_rate  # in ms
-        time_step = minute/refresh_rate
+        timer_period = 1000/args.refresh_rate  # in ms
+        args.time_step = Units.second/args.refresh_rate
+        args.zoom_factor = 1
 
-        zoom_factor = 1
+        # global state variables
+        args.planet_scale = 1
+        args.ambient = 0.1
+        args.paused = False
 
-        show_clipper_orbit = True
-
-        myprint(verbose=verbose, text='time step is {}'.format(time_step))
+        # interaction state variables
+        args.planet_focus_changed = False
+        args.do_tether = False
+        args.saved_relative_position = None
+        args.in_progress = False
+        args.cam_changed = True
 
         # Render size set to HD Display
-        focus_planet = 'Sun'  # Initial focus planet is the sun
+        # args.planet_focus = 'Sun'  # Initial focus planet is the sun
+        args.show_clipper_orbit = True
 
-        body_mappers = {}
-        body_actors = {}
-        body_point_actors = {}
-        body_tag_actors = {}
-        arrows_actor = {}
-        ring_actors = []
-        orbit_actors = {}
-        ecliptic_actors = []
-        all_actors = {}
+        ''' Mission State '''
+        print('creating mission state')
+        self.mission_state = SimulationState(params=args, time_step=args.time_step, clock=self.mission_data.schedule.initial_time)
+        print('mission state created')
+
+        myprint(verbose=verbose, text='time step is {}'.format(args.time_step))
 
         # Create render window
-        render_window = vtk.vtkRenderWindow()
-        if not do_shadows:
+        render_window = self.ui.vtkWidget.GetRenderWindow()
+        if not args.show_shadows:
             render_window.SetNumberOfLayers(2)
-        if resolution[0] > 0 and resolution[1] > 0:
-            render_window.SetSize(resolution[0], resolution[1])  # Set the window size
+        if args.resolution[0] > 0 and args.resolution[1] > 0:
+            render_window.SetSize(args.resolution[0], args.resolution[1])  # Set the window size
         else:
             resolution = render_window.GetScreenSize()
             render_window.SetSize(resolution)
         render_window.SetWindowName("Solar System")
         render_window.StereoRenderOff()
 
+        all_actors = {}
         myprint(verbose=verbose, text='Creating Jupiter\'s rings...')
-        make_rings()
+        all_actors['rings'] = VTKUtils.make_rings(self.mission_data)
+        print('after initialization, ring actor has position {}'.format(all_actors['rings'][0].GetPosition()))
         myprint(verbose=verbose, text='...done.')
+
         myprint(verbose=verbose, text='Creating ecliptic plane...')
-        make_ecliptic_plane()
+        all_actors['ecliptic'] = VTKUtils.make_ecliptic_plane(self.mission_data)
         myprint(verbose=verbose, text='...done.')
+
         myprint(verbose=verbose, text='Creating bodies\' orbit curves...')
-        make_orbits()
+        all_actors['orbits'] = VTKUtils.make_orbits(self.mission_data)
         myprint(verbose=verbose, text='...done.')
+
         myprint(verbose=verbose, text='Creating Clipper object...')
-        clipper_orbit = ClipperOrbit()
+        all_actors['clipper position'] = self.mission_data.clipper.position_actor
+        all_actors['clipper orbit'] = self.mission_data.clipper.orbit_actor
         myprint(verbose=verbose, text='...done.')
 
         idx = 0
         myprint(verbose=verbose, text='Initializing VTK actors...')
-        for name in all_body_names:
-            body = bodies[name]
+        body_actors = {}
+        body_point_actors = {}
+        for name in self.mission_data.all_body_names:
+            print(f'processing {name}')
+            body = self.mission_data.bodies[name]
 
             # Create Actors and add textures, rotations, and orbit position
-            body_actors[name] = body.MoveActor(clock)
-            body_actors[name].GetProperty().SetAmbient(ambient)
-            body_actors[name].GetProperty().SetSpecular(0.01)
+            body_actors[name] = body.move_actor(self.mission_state.clock)
+            body_actors[name].GetProperty().SetAmbient(self.mission_state.params.ambient)
+            body_actors[name].GetProperty().SetSpecular(0) #.01)
             body_actors[name].GetProperty().SetDiffuse(0.65)
-            all_actors['Body ' + name] = body_actors[name]
 
-            body_point_actors[name] = body.MovePointActor(clock)
-            all_actors['Point ' + name] = body_point_actors[name]
+            body_point_actors[name] = body.move_point_actor(self.mission_state.clock)
 
             if name == 'Saturn':
                 myprint(verbose=verbose, text='moving rings')
-                for actor in ring_actors:
-                    actor.SetPosition(body.GetPosition())
-                    copy_transformation(body.GetActor(), actor)
-                    actor.GetProperty().SetAmbient(ambient)
+                for actor in all_actors['rings']:
+                    # print(f'ring actor is {actor}')
+                    # print(f'Saturn\'s position is {body.get_position(self.mission_state.clock)}')
+                    # print(f'Saturn\'s actor position is {body.get_actor().GetPosition()}')
+                    # actor.SetPosition(body.get_position(self.mission_state.clock))
+                    # print(f'ring actor moved to {actor.GetPosition()}')
+                    VTKUtils.copy_transformation(body.get_actor(), actor)
+                    # print(f'After transformation, ring actor is {actor}')
+                    actor.GetProperty().SetAmbient(self.mission_state.params.ambient)
         myprint(verbose=verbose, text='...done.')
+        all_actors['bodies'] = body_actors
+        all_actors['points'] = body_point_actors
+        resize_image = vtk.vtkImageResize()
+
+        ''' Mission Graphics '''
+        mission_graphics = GraphicsObjects(window=render_window, all_actors=all_actors, resize=resize_image)
+
+        ''' Mission '''
+        self.clipper_mission = Simulation(state=self.mission_state, data=self.mission_data, graphics=mission_graphics)
 
         # Create Lighting
         sunlight1 = vtk.vtkLight()
         sunlight1.SetPosition(0, 0, 0)
-        sunlight1.SetFocalPoint(0.0000001*scale, 0, 0)  # Right hemisphere lighting
+        sunlight1.SetFocalPoint(0.0000001*self.mission_state.params.scale, 0, 0)  # Right hemisphere lighting
         sunlight1.SetConeAngle(180)
-        sunlight1.SetPositional(1)
+        sunlight1.SetPositional(0)
 
+        # Left hemisphere lighting
         sunlight2 = vtk.vtkLight()
         sunlight2.SetPosition(0, 0, 0)
-        sunlight2.SetFocalPoint(-0.0000001*scale, 0, 0)  # Left hemisphere lighting
+        sunlight2.SetFocalPoint(-0.0000001*self.mission_state.params.scale, 0, 0)
         sunlight2.SetConeAngle(180)
-        sunlight2.SetPositional(1)
+        sunlight2.SetPositional(0)
+
+        # Saturn specific lighting
+        sunlight3 = vtk.vtkLight()
+        sunlight3.SetPosition(0, 0, 0)
+        sunlight3.SetFocalPoint(self.mission_data.bodies['Saturn'].get_position(et=self.mission_state.clock))
+        sunlight3.SetConeAngle(90)
+        sunlight3.SetPositional(1)
 
         # Add Background Starry Image
-        if not do_shadows:
+        if not args.show_shadows:
             myprint(verbose=verbose, text='Loading background image...')
             jpeg_reader = vtk.vtkJPEGReader()
-            jpeg_reader.SetFileName(texture_files['Stars'])
+            jpeg_reader.SetFileName(self.mission_data.texture_files['Stars'])
             jpeg_reader.Update()
 
             # Resize Image to Match Render Window Size
-            resize_image = vtk.vtkImageResize()
+            #resize_image = vtk.vtkImageResize()
             resize_image.SetInputData(jpeg_reader.GetOutput())
             resize_image.SetResizeMethod(0)
-            if resolution[0] > 0 and resolution[1] > 0:
-                resize_image.SetOutputDimensions(resolution[0], resolution[1], 0)
+            if args.resolution[0] > 0 and args.resolution[1] > 0:
+                resize_image.SetOutputDimensions(args.resolution[0], args.resolution[1], 0)
             resize_image.Update()
 
             background_mapper = vtk.vtkImageMapper()
@@ -1153,7 +1233,6 @@ class ClipperMission(QMainWindow):
             background_actor = vtk.vtkActor2D()
             background_actor.SetMapper(background_mapper)
             all_actors['background'] = background_actor
-            background_actor.DebugOn()
             myprint(verbose=verbose, text='...done')
 
         # Light up the sun no matter what
@@ -1163,232 +1242,198 @@ class ClipperMission(QMainWindow):
 
         # Create a renderer and add the actors to the scene
         myprint(verbose=verbose, text='Rendering Planets...')
-        body_renderer = vtk.vtkRenderer()
+        renderers = {}
+        renderers['bodies'] = vtk.vtkRenderer()
         # body_renderer.UseShadowsOn()
-        body_renderer.SetBackground(0, 0, 0)  # black background
-        body_renderer.AddLight(sunlight1)
-        body_renderer.AddLight(sunlight2)
+        renderers['bodies'].SetBackground(0, 0, 0)  # black background
+        renderers['bodies'].AddLight(sunlight1)
+        renderers['bodies'].AddLight(sunlight2)
+        # renderers['bodies'].AddLight(sunlight3)
         myprint(verbose=verbose, text='Adding all actors to renderer...')
-        for name in all_body_names:
-            body_renderer.AddActor(body_actors[name])
-            body_renderer.AddActor(body_point_actors[name])
-        for actor in ring_actors:
+        for name in self.mission_data.all_body_names:
+            renderers['bodies'].AddActor(body_actors[name])
+            renderers['bodies'].AddActor(body_point_actors[name])
+        for actor in all_actors['rings']:
             # myprint(verbose=verbose, text='adding one ring actor {}'.format(actor))
-            body_renderer.AddActor(actor)
-        if show_ecliptic:
-            for actor in ecliptic_actors:
-                body_renderer.AddActor(actor)
-        if show_orbits:
-            myprint(verbose=verbose, text='orbit_actors={}'.format(orbit_actors))
-            for body, actor in orbit_actors.items():
+            renderers['bodies'].AddActor(actor)
+        if args.show_ecliptic:
+            for actor in self.graphics.ecliptic_actors:
+                renderers['bodies'].AddActor(actor)
+        if args.show_orbits:
+            myprint(verbose=verbose, text='orbit_actors={}'.format(mission_graphics.all_actors['orbits']))
+            for body, actor in all_actors['bodies'].items():
                 myprint(verbose=verbose, text='body={}, actor={}'.format(body, actor))
-                body_renderer.AddActor(actor)
-        if show_clipper_orbit:
-            body_renderer.AddActor(clipper_orbit.orbit_actor)
-        body_renderer.AddActor(clipper_orbit.position_actor)
+                renderers['bodies'].AddActor(actor)
+        if args.show_clipper_orbit:
+            renderers['bodies'].AddActor(all_actors['clipper orbit'])
+        renderers['bodies'].AddActor(all_actors['clipper position'])
         myprint(verbose=verbose, text='...done.')
 
         # Create the camera focused on the Sun
         cam1 = vtk.vtkCamera()
         cam1.SetFocalPoint(0, 0, 0)  # Sun Center
-        cam1.SetPosition(-distance('Mercury', 'Sun'), 0, 0.5*distance('Mercury', 'Sun'))
+        cam1.SetPosition(-self.mission_data.distance('Mercury', 'Sun', self.mission_state.clock), 0, 0.5*self.mission_data.distance('Mercury', 'Sun', self.mission_state.clock))
         cam1.Elevation(0)  # look at off-angle system (0 is top down)
         cam1.Azimuth(0)
         cam1.SetViewUp(0,0,1)
         cam1.SetClippingRange(100, 100000000000)
         myprint(verbose=verbose, text='camera view angle is: {}'.format(cam1.GetViewAngle()))
 
-        body_renderer.SetActiveCamera(cam1)
-        if not do_shadows:
-            body_renderer.SetLayer(1)  # In front of background image
+        renderers['bodies'].SetActiveCamera(cam1)
+        if not args.show_shadows:
+            renderers['bodies'].SetLayer(1)  # In front of background image
 
-        if do_shadows:
+        if args.show_shadows:
             myprint(verbose=verbose, text='adding shadows')
             render_window.SetMultiSamples(0)
             shadows = vtk.vtkShadowMapPass()
-            shadows.DebugOn()
+            # shadows.DebugOn()
             sequence = vtk.vtkSequencePass()
-            sequence.DebugOn()
+            # sequence.DebugOn()
             passes = vtk.vtkRenderPassCollection()
-            passes.DebugOn()
+            # passes.DebugOn()
             passes.AddItem(shadows.GetShadowMapBakerPass())
             passes.AddItem(shadows)
             sequence.SetPasses(passes)
             camera_pass = vtk.vtkCameraPass()
-            camera_pass.DebugOn()
+            # camera_pass.DebugOn()
             camera_pass.SetDelegatePass(sequence)
 
-            gl_renderer = body_renderer
-            gl_renderer.SetPass(camera_pass)
+            renderers['bodies'].SetPass(camera_pass)
 
 
         # Add useful text to the renderer
         # Render Title
+        text_actors = {}
         myprint(verbose=verbose, text='Setting text actors...')
-        text_actor_title = vtk.vtkTextActor()
-        text_actor_title.SetInput("The Solar System")
-        text_actor_title.SetPosition(40, resolution[1] - 90)
-        text_actor_title.GetTextProperty().SetFontSize(30)
-        text_actor_title.GetTextProperty().SetColor(1.0, 1.0, 1.0)
-        all_actors['title'] = text_actor_title
+        print(f'resolution={args.resolution}')
+        text_actors['title'] = vtk.vtkTextActor()
+        text_actors['title'].SetInput("The Solar System")
+        text_actors['title'].SetPosition(40, args.resolution[1] - 90)
+        text_actors['title'].GetTextProperty().SetFontSize(15)
+        text_actors['title'].GetTextProperty().SetColor(1.0, 1.0, 1.0)
 
         # Current planet of focus
-        text_actor_body = vtk.vtkTextActor()
-        text_actor_body.SetInput('Current Focus: Sun')
-        text_actor_body.GetPositionCoordinate().SetCoordinateSystemToNormalizedDisplay()
-        text_actor_body.GetPositionCoordinate().SetValue(.80, .95)
-        text_actor_body.GetPosition2Coordinate().SetCoordinateSystemToNormalizedDisplay()
-        text_actor_body.GetPosition2Coordinate().SetValue(.99, .95)
-        text_actor_body.GetTextProperty().SetFontSize(30)
-        text_actor_body.GetTextProperty().SetColor(1.0, 1.0, 1.0)
-        all_actors['focus body'] = text_actor_body
+        text_actors['bodies'] = vtk.vtkTextActor()
+        text_actors['bodies'].SetInput('Current Focus: Sun')
+        text_actors['bodies'].GetPositionCoordinate().SetCoordinateSystemToNormalizedDisplay()
+        text_actors['bodies'].GetPositionCoordinate().SetValue(.80, .95)
+        text_actors['bodies'].GetPosition2Coordinate().SetCoordinateSystemToNormalizedDisplay()
+        text_actors['bodies'].GetPosition2Coordinate().SetValue(.99, .95)
+        text_actors['bodies'].GetTextProperty().SetFontSize(10)
+        text_actors['bodies'].GetTextProperty().SetColor(1.0, 1.0, 1.0)
 
-        time_text = vtk.vtkTextActor()
-        time_text.SetInput('{}'.format(spice.timout(init_time, 'AP:MN:SC AMPM Month DD, YYYY')))
-        time_text.GetPositionCoordinate().SetCoordinateSystemToNormalizedDisplay()
-        time_text.GetPositionCoordinate().SetValue(0.01, 0.95)
-        time_text.GetPosition2Coordinate().SetCoordinateSystemToNormalizedDisplay()
-        time_text.GetPosition2Coordinate().SetValue(0.25, 0.95)
-        time_text.GetTextProperty().SetFontSize(30)
-        time_text.GetTextProperty().SetColor(1.0, 1.0, 1.0)
-        all_actors['time display'] = time_text
+        text_actors['time'] = vtk.vtkTextActor()
+        text_actors['time'].SetInput('{}'.format(spice.timout(self.mission_data.schedule.initial_time, 'AP:MN:SC AMPM Month DD, YYYY')))
+        text_actors['time'].GetPositionCoordinate().SetCoordinateSystemToNormalizedDisplay()
+        text_actors['time'].GetPositionCoordinate().SetValue(0.01, 0.95)
+        text_actors['time'].GetPosition2Coordinate().SetCoordinateSystemToNormalizedDisplay()
+        text_actors['time'].GetPosition2Coordinate().SetValue(0.25, 0.95)
+        text_actors['time'].GetTextProperty().SetFontSize(10)
+        text_actors['time'].GetTextProperty().SetColor(1.0, 1.0, 1.0)
+
+        all_actors['text'] = text_actors
         myprint(verbose=verbose, text='...done')
 
-        body_renderer.AddActor2D(text_actor_body)
-        body_renderer.AddActor2D(time_text)
+        renderers['bodies'].AddActor2D(text_actors['time'])
+        renderers['bodies'].AddActor2D(text_actors['bodies'])
 
-        all_actors = body_renderer.GetActors()
-        all_actors.InitTraversal()
-        while True:
-            actor = all_actors.GetNextActor()
-            if actor:
-                actor.DebugOn()
-            else:
-                break
-
-        render_window.AddRenderer(body_renderer)
+        render_window.AddRenderer(renderers['bodies'])
 
         # Create a background renderer
-        if not do_shadows:
+        if not args.show_shadows:
             background_renderer = vtk.vtkRenderer()
-            background_renderer.DebugOn()
+            # background_renderer.DebugOn()
             background_renderer.SetLayer(0)
             background_renderer.InteractiveOff()
             background_renderer.AddActor(background_actor)
             render_window.AddRenderer(background_renderer)
-            render_window.DebugOn()
+            # render_window.DebugOn()
 
         # visualize ecliptic plane
-        if show_ecliptic:
-            for actor in ecliptic_actors:
-                body_renderer.AddActor(actor)
+        if args.show_ecliptic:
+            for actor in all_actors['ecliptic']:
+                renderers['bodies'].AddActor(actor)
+
+        self.clipper_mission.graphics.renderers = renderers
 
         # Set-up interactor
-        render_window_interactor = vtk.vtkRenderWindowInteractor()
-        render_window_interactor.DebugOn()
+        render_window_interactor = self.ui.vtkWidget.GetRenderWindow().GetInteractor()
+        # render_window_interactor.DebugOn()
         style = vtk.vtkInteractorStyleTrackballCamera()
         style.AutoAdjustCameraClippingRangeOff()
-        style.DebugOn()
+        # style.DebugOn()
         render_window_interactor.SetInteractorStyle(style)
-        render_window_interactor.SetRenderWindow(render_window)
         render_window_interactor.Initialize()
         render_window.Render()
 
-        render_window.AddObserver('ModifiedEvent', window_resized_callback)
+        render_window.AddObserver('WindoResizeEvent', self.clipper_mission.window_size_change_cb)
 
         myprint(verbose=verbose, text='Creating sliders...')
-        slider, day_widget = make_slider(0, 730, time_step/hour * refresh_rate, 'Hours per second', 0.02, 0.2)
-        day_widget.AddObserver("InteractionEvent", slider_callback)
-        slider.DebugOn()
-        day_widget.DebugOn()
 
-        # Widget to control the scale of the planets
-        slider2, planet_widget = make_slider(planet_min_max[0], planet_min_max[1], 1, 'Bodies scaling factor', .22, .42)
-        planet_widget.AddObserver("InteractionEvent", planet_slider_callback)
-        slider2.DebugOn()
-        planet_widget.DebugOn()
+        # Setting up widgets
+        self.ui.timescale_spinbox.setValue(self.mission_state.time_step)
+        self.ui.planetscale_dial.setRange(1, int(args.max_planet_scale))
+        self.ui.planetscale_dial.setValue(self.mission_state.params.planet_scale)
+        self.ui.date_slider.setRange(0, int(what_day(data=self.mission_data, et=self.mission_data.schedule.final_time)))
+        self.ui.date_slider.setOrientation(QtCore.Qt.Horizontal)
+        self.ui.date_slider.setValue(int(what_day(self.mission_data, self.mission_state.clock)))
+        self.ui.date_slider.setTracking(False)
+        self.ui.date_slider.setTickInterval(365)
+        self.ui.date_slider.setTickPosition(QSlider.TicksAbove)
 
-        time_slider, time_widget = make_slider(0, (etb[1]-etb[0])/hour, 0, 'ET in hours since {}'.format(clock_as_str(etb[0])), 0.45, 0.98)
-        time_widget.AddObserver('InteractionEvent', time_slider_callback)
-        time_slider.DebugOn()
-        time_widget.DebugOn()
+        myprint(verbose=verbose, text='Initializing interactor and adding observers')
+        interactor = render_window.GetInteractor()
+        # interactor.AddObserver('TimerEvent', self.timer_callback)
+        interactor.AddObserver('KeyPressEvent', self.clipper_mission.key_pressed_cb)
+        # interactor.AddObserver('InteractionEvent', interaction_callback)
+        interactor.AddObserver('StartInteractionEvent', self.clipper_mission.interaction_start_cb)
+        interactor.AddObserver('EndInteractionEvent', self.clipper_mission.interaction_end_cb)
+        # interactor.CreateRepeatingTimer(int(timer_period))  # ms between calls
+        self.timer = QTimer(self)
+        self.timer.setInterval(int(timer_period))
+        print(f'interval set to {timer_period}')
 
-        # Sign up to receive TimerEvent
-        cb = TimerCallback()
-        cb.body_actors = body_actors
-        cb.ring_actors = ring_actors
-        cb.camera = cam1
-        cb.camera.AddObserver(vtk.vtkCommand.ModifiedEvent, camera_modif_callback)
-        cb.text = text_actor_body
-        cb.time_display = time_text
-
-        render_window_interactor.AddObserver('TimerEvent', cb.execute)
-        render_window_interactor.AddObserver('KeyPressEvent', key_pressed_callback)
-        render_window_interactor.AddObserver('InteractionEvent', interaction_callback)
-        render_window_interactor.AddObserver('StartInteractionEvent', interaction_start_callback)
-        render_window_interactor.AddObserver('EndInteractionEvent', interaction_end_callback)
-        render_window_interactor.CreateRepeatingTimer(int(timer_period))  # ms between calls
-        render_window_interactor.EnableRenderOn()
+        # interactor.EnableRenderOn()
         myprint(verbose=verbose, text='...done')
-        myprint(verbose=verbose, text='Starting interactive loop...')
-        render_window_interactor.Initialize()
         render_window.Render()
-        render_window_interactor.Start()
+
+        myprint(verbose=verbose, text='Connecting widget to callbacks')
+        self.ui.timescale_spinbox.valueChanged.connect(self.clipper_mission.time_step_change_cb)
+        self.ui.date_slider.valueChanged.connect(self.clipper_mission.date_change_cb)
+        self.ui.planetscale_dial.valueChanged.connect(self.clipper_mission.planet_scale_change_cb)
+        self.ui.push_screenshot.clicked.connect(self.clipper_mission.screenshot_cb)
+        self.timer.timeout.connect(self.timer_callback)
+        myprint(verbose=verbose, text='...done')
+        sys.exit(app.exec_())
 
 if __name__ == '__main__':
-    global show_ecliptic
-    global show_orbits
-    global planet_min_max
-    global resolution
-    global do_record
-    global filebase
-    global do_shadows
-
     parser = argparse.ArgumentParser(
             description='Visualize Clipper Spacecraft and Solar System using NAIF Data',
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-e', '--ecliptic', action='store_true', help='Show ecliptic plane')
-    parser.add_argument('-o', '--orbits', action='store_true', help='Show planets\' orbits')
+    parser.add_argument('--show_ecliptic', action='store_true', help='Show ecliptic plane')
+    parser.add_argument('--show_orbits', action='store_true', help='Show planets\' orbits')
     parser.add_argument('-r', '--resolution', metavar='int', default=[2560, 1440], type=int, nargs=2, help='window resolution (-1: full screen)')
-    parser.add_argument('-s', '--sun', metavar='float', default='40', type=float, help='Max sun radius (in multiples of Mercury semi-major axis)')
-    parser.add_argument('-p', '--planet', metavar='float', default=[1, 2000], type=float, nargs=2, help='Range of scaling factors for planets')
-    parser.add_argument('-x', '--scale', metavar='int', default=10000, type=int, help='Uniform space scaling factor')
-    parser.add_argument('-t', '--time', metavar='float', default=[-1, -1], type=float, nargs=2, help='Temporal range to consider')
-    parser.add_argument('-v', '--video', metavar='filename', default='ephemeris', type=str, help='Filename to store each individual frame of the animation')
-    parser.add_argument('-c', '--camera', metavar='json', type=str, help='Json string containing camera setting')
-    parser.add_argument('--shadow', action='store_true', help='Use shadow map pass')
+    parser.add_argument('--max_sun_scale', metavar='float', default='40', type=float, help='Max sun radius (in multiples of Mercury semi-major axis)')
+    parser.add_argument('--max_planet_scale', metavar='float', default=1000.,
+                        type=float, nargs=2, help='Range of scaling factors for planets')
+    parser.add_argument('--planet_scale', metavar='float', default=1.,
+                        type=float, nargs=2, help='Initial scaling factors for planets')
+    parser.add_argument('--planet_focus', metavar='body', default='Sun', help='Initial body focus')
+    parser.add_argument('-x', '--scale', metavar='float', default=1, type=float, help='Uniform space scaling factor')
+    parser.add_argument('--time_range', metavar='float', default=[-1, -1], type=float, nargs=2, help='Temporal range to consider in days (using mission start as reference)')
+    parser.add_argument('--video_name', metavar='filename', default='ephemeris', type=str, help='Filename to store each individual frame of the animation')
+    parser.add_argument('-c', '--camera', metavar='json', type=str, help='Json file containing camera setting')
+    parser.add_argument('--refresh_rate', type=float, default=5.0, help='Simulation refresh rate')
+    parser.add_argument('--show_shadows', action='store_true', help='Use shadow map pass')
     parser.add_argument('--verbose', action='store_true', help='Toggle verbose mode')
-    parser.add_argument('--media', type=str, default='media', help='Path to media files')
+    parser.add_argument('--media_path', type=str, default='media', help='Path to media files')
+    parser.add_argument('--naif_path', type=str, default='naif', help='Path to naif files')
     args = parser.parse_args()
 
     app = QApplication(sys.argv)
-    window = ClipperMission()
+    window = MainWindow()
     window.ui.vtkWidget.GetRenderWindow().SetSize(args.resolution[0], args.resolution[1])
+    window.setWindowState(Qt.WindowMaximized)
     window.show()
-    window.SetWindowState(Qt.WindowMaximized)
-    window.iren.Initialize()
-
-    show_ecliptic = args.ecliptic
-    show_orbits = args.orbits
-    scale = args.planet_scale
-    sun_max = args.sun
-    planet_min_max = args.planet
-    resolution = args.resolution
-    if args.video is not None:
-        do_record = True
-        filebase = args.video
-    if args.camera is not None:
-        load_camera(args.camera)
-    if args.time is not None:
-        selected_interval = args.time
-        myprint(verbose=verbose, text='selected interval = {}'.format(selected_interval))
-    if args.shadow:
-        do_shadows = args.shadow
-    else:
-        do_shadows = False
-    verbose = args.verbose
-
-    global data
-    data = DataLoader(media_path=args.media, naif_path=)
-
-    main()
+    window.main(args)
