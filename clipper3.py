@@ -2201,6 +2201,8 @@ class MainWindow(QMainWindow):
         #     print(f'{actor.GetObjectName()}')
         #     actor = actors.GetNextActor()
 
+    # TODO: add date_change() and make date_change_cb() to Qtime conversion and call
+
     def planet_scale_dial_changed_cb(self, value):
         self.ui.scaleSpinBox.blockSignals(True)
         self.ui.scaleSpinBox.setValue(value)
