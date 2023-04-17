@@ -629,7 +629,7 @@ in betweeen
 class Schedule:
     def __init__(self, init: float, arrival: float, end: float):
         self.initial_time = init
-        self.launch_time = init + Units.duration(days=0.5)
+        self.launch_time = init + Units.duration(days=0.5) # TODO: need to edit this for new data?
         self.launch_duration = Units.duration(hours=2)
         print(f'launch time is {spice.timout(int(self.launch_time), "AP: MN: SC AMPM Month DD, YYYY")}')
         self.arrival_time = arrival
@@ -1011,6 +1011,8 @@ class DataLoader:
         # load the data
         myprint(verbose=verbose, text='loading the data from NAIF files...')
         spice.furnsh(os.path.join(naif_path, '19F23_VEEGA_L230511_A290930_LP01_V2_scpse.bsp')) # clipper
+        # spice.furnsh(os.path.join(naif_path, '21F31_MEGA_L241010_A300411_LP01_V4_postLaunch_scpse.bsp'))
+        # spice.furnsh(os.path.join(naif_path, '21F31_MEGA_L241010_A300411_LP01_V5_pad_scpse.bsp'))
         spice.furnsh(os.path.join(naif_path, 'naif0012.tls')) # bodies' dynamics
         spice.furnsh(os.path.join(naif_path, 'pck00010.tpc')) # bodies' constant values and orientation
         myprint(verbose=verbose, text='...done')
@@ -1351,7 +1353,7 @@ class VTKUtils:
             # tethered to a planet, following trajectory
             bodyname = camera_name[1]
             r = data.bodies[bodyname].get_max_radius()
-            camera.SetPosition(5*r, 0, 0)
+            camera.SetPosition(5*r, 0, 0) # TODO: view from x-axis, change this offset to z?
             camera.SetFocalPoint(0, 0, 0)
             camera.SetViewUp(0, 0, 1)
             camera.SetViewAngle(45)
@@ -1437,6 +1439,7 @@ class VTKUtils:
 
     # Return: actor_plane, actor_perimeter
     # Ecliptic disk and surrounding perimeter
+    # TODO: command line option: AttributeError: 'MainWindow' object has no attribute 'graphics'
     def make_ecliptic_plane(data: DataLoader) -> List[vtk.vtkActor]:
         ecliptic_actors = []
         ecliptic = vtk.vtkRegularPolygonSource()
