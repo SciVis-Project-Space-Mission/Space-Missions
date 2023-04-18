@@ -1372,11 +1372,10 @@ class VTKUtils:
             if be:
                 camera.SetPosition(0, 0, 5*r)
                 camera.SetViewUp(0, 1, 0)
-                camera.SetViewAngle(0) # TODO: what is this?, how to get view above?
             else:
                 camera.SetPosition(5*r, 0, 0)
                 camera.SetViewUp(0, 0, 1)
-                camera.SetViewAngle(45)
+            camera.SetViewAngle(45)
             camera.SetFocalPoint(0, 0, 0)
             camera.SetClippingRange(r, 50*r)
         elif camera_name[0] == 'Clipper':
@@ -2247,17 +2246,15 @@ class MainWindow(QMainWindow):
             events_time_st = {
                 'launch': '2023 05, 11 08:00:00'
             }
-            events_time_ed = {
-                'launch': '2023 05, 11 09:00:00'
-            }
+            # events_time_ed = {
+            #     'launch': '2023 05, 11 09:00:00'
+            # }
             events_time_scale = {
                 'launch': self.time_step_changed_1minute_cb
             }
             events_frame = {
                 'launch': ('None', 'Earth')
             }
-
-            # TODO: start paused?
 
             time_st = events_time_st[event_name]
             et_st = spice.utc2et(time_st)
@@ -2271,8 +2268,8 @@ class MainWindow(QMainWindow):
             event_camera = VTKUtils.vantage_point(camera_name=frame, data=self.data, be=True)
             self.change_planet_focus(anchor, target, ref_camera=event_camera)
 
-            self.time_end = events_time_ed[event_name]
-            # TODO: need to poll for when self.state.clock >= self.time_end
+            # self.time_end = events_time_ed[event_name]
+            # need to poll for when self.state.clock >= self.time_end
 
     def planet_scale_dial_changed_cb(self, value):
         self.ui.scaleSpinBox.blockSignals(True)
