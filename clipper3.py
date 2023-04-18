@@ -1783,7 +1783,7 @@ class MainWindow(QMainWindow):
                     cam_setting['up'])
                 self.graphics.all_actors['text']['bodies'].SetInput(
                     'Current Focus: {}'.format(self.state.params.planet_focus))
-        # TODO: replace with change_planet_focus()
+        # TODO: bugged, replace with change_planet_focus()
 
             # Overrides the default vtk behavior for keypress '3'
             if int(new_key) == 3:

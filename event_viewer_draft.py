@@ -102,7 +102,8 @@ def vantage_point(camera_name: str, data: DataLoader, be=False) -> vtk.vtkCamera
         return camera
 
 
-def change_planet_focus(target):
+# TODO: number keys are bugged, use change_planet_focus() instead of vantage_point()
+def change_planet_focus_key(self, target):
     if target != self.state.params.planet_focus:
         myprint(verbose=True, text='changing focus from {} to {}'.format(
             self.state.params.planet_focus, target))
@@ -121,6 +122,82 @@ def change_planet_focus(target):
             'Current Focus: {}'.format(self.state.params.planet_focus))
 
 
+def change_planet_focus(self, anchor, target, ref_camera=None):
+
+    print('anchor or target changed...')
+    print('anchor={}, target={}'.format(anchor, target))
+    selected_frame = None
+    if anchor == 'Cape Canaveral' or target == 'Sky':
+        skyid = self.ui.target_to_index('Sky')
+        capeid = self.ui.anchor_to_index('Cape Canaveral')
+        # force consistency between anchor and target
+        self.ui.cameraTargetComboBox.blockSignals(True)
+        self.ui.cameraTargetComboBox.setCurrentIndex(skyid)
+        self.ui.cameraTargetComboBox.blockSignals(False)
+        self.ui.cameraPositionComboBox.blockSignals(True)
+        self.ui.cameraPositionComboBox.setCurrentIndex(capeid) 
+        self.ui.cameraPositionComboBox.blockSignals(False)
+        selected_frame = ('Cape Canaveral', 'Sky')
+        self.state.what_anchor = 'Cape Canaveral'
+        self.state.what_tether = 'Sky'
+    else:
+        selected_frame = (anchor, target)
+        self.state.what_anchor = anchor
+        self.state.what_tether = target
+
+    print('selected frame = {}'.format(selected_frame))
+    self.graphics.all_actors['text']['bodies'].SetInput('Current Focus: {}'.format(selected_frame[1]))
+    
+    if self.state.what_anchor == 'None' and self.state.what_tether == 'None':
+        return
+    
+    self.state.active_frame=(self.state.what_anchor, self.state.what_tether)
+
+    self.ui.viewAngleDial.blockSignals(True)
+    self.ui.viewAngleDial.setValue(int(self.state.current_camera[self.state.active_frame].GetViewAngle()))
+    self.ui.viewAngleDial.blockSignals(False)
+    self.ui.viewAngleSpinBox.blockSignals(True)
+    self.ui.viewAngleSpinBox.setValue(int(self.state.current_camera[self.state.active_frame].GetViewAngle()))
+    self.ui.viewAngleSpinBox.blockSignals(False)
+    self.ui.clippingNearSpinBox.blockSignals(True)
+    self.ui.clippingNearSpinBox.setValue(self.state.current_camera[self.state.active_frame].GetClippingRange()[0])
+    self.ui.clippingNearSpinBox.blockSignals(False)
+    self.ui.clippingFarSpinBox.blockSignals(True)
+    self.ui.clippingFarSpinBox.setValue(self.state.current_camera[self.state.active_frame].GetClippingRange()[1])
+    self.ui.clippingFarSpinBox.blockSignals(False)
+
+    if ref_camera is None:
+        ref_camera = self.state.default_camera[selected_frame]
+
+    if self.ui.resetCameraPosition.checkState()==2 and self.ui.resetCameraTarget.checkState()==2:
+        self.state.current_camera[selected_frame] = duplicate_camera(ref_camera)
+    elif self.ui.resetCameraPosition.checkState()==2:
+        self.state.current_camera[selected_frame].SetPosition(ref_camera.GetPosition())
+    elif self.ui.resetCameraTarget.checkState()==2:
+        self.state.current_camera[selected_frame].SetFocalPoint(ref_camera.GetFocalPoint())
+    # otherwise nothing to be done
+
+
+    print('selected frame={}'.format(self.data.dynbodyframe[selected_frame]))
+    print('selected camera={}'.format(self.state.current_camera[selected_frame]))
+    f = self.data.dynbodyframe[selected_frame]
+    c = self.state.current_camera[selected_frame]
+    # self.graphics.renderers['bodies'].SetActiveCamera(local2global(self.data.dynbodyframe[selected_frame], self.state.current_camera[selected_frame], self.state.clock))
+    self.graphics.renderers['bodies'].SetActiveCamera(local2global(f, c, self.state.clock))
+    self.graphics.window.Render()
+
+
+''' 
+Callback functions from Simulation
+'''
+def anchor_or_target_changed_cb(self, unused_id):
+
+    anchor = self.ui.anchors[self.ui.cameraPositionComboBox.currentIndex()]
+    target = self.ui.targets[self.ui.cameraTargetComboBox.currentIndex()]
+
+    change_planet_focus(anchor, target)
+
+
 def play_event(self, event_name):
 
     events_time_st = {
@@ -132,7 +209,7 @@ def play_event(self, event_name):
     events_time_scale = {
         'launch': time_step_changed_1minute_cb
     }
-    events_target = {
+    events_frame = {
         'launch': (None, 'Earth')
     }
 
@@ -142,8 +219,11 @@ def play_event(self, event_name):
 
     events_time_scale[event_name]()
 
-    target = events_target[event_name]
-    change_planet_focus(target)
+    frame = events_frame[event_name]
+    anchor = frame[0]
+    target = frame[1]
+    event_camera = VTKUtils.vantage_point(camera_name=frame, data=self.data, be=True)
+    change_planet_focus(anchor, target, ref_camera=event_camera)
 
     self.time_end = events_time_ed[event_name]
     # TODO: need to poll for when self.state.clock >= self.time_end
