@@ -213,10 +213,21 @@ class Ui_MainWindow(object):
             self.timeControlLayout.addWidget(self.timestepRadioButton[i])
         self.mainGridLayout.addWidget(self.timeControlBox, 1, 1, 1, 1)
 
+        self.timePointBox = QGroupBox(self.centralwidget)
+        self.timePointBox.setObjectName("timePointBox")
+        self.timePointLayout = QVBoxLayout(self.timePointBox)
+        self.timePointLayout.setObjectName("timePointLayout")
         # self.calendar = QCalendarWidget(self.centralwidget)
-        self.calendar = QDateTimeEdit()
+        self.calendar = QDateTimeEdit(self.timePointBox)
         self.calendar.setObjectName("calendar")
-        self.mainGridLayout.addWidget(self.calendar, 1, 2, 1, 1)
+        self.timePointLayout.addWidget(self.calendar)
+        self.events = ['launch']
+        self.eventComboBox = QComboBox(self.timePointBox)
+        self.eventComboBox.setObjectName("eventComboBox")
+        for i in range(len(self.events)):
+            self.eventComboBox.addItem('')
+        self.timePointLayout.addWidget(self.eventComboBox)
+        self.mainGridLayout.addWidget(self.timePointBox, 1, 2, 1, 1)
 
         self.cameraControl = QGroupBox(self.centralwidget)
         self.cameraControl.setObjectName('cameraControl')
@@ -324,6 +335,9 @@ class Ui_MainWindow(object):
                 i, _translate("MainWindow", a))
         self.resetCameraPosition.setText(_translate('MainWindow', 'Reset'))
         self.scaleLabel.setText(_translate("MainWindow", "Scale"))
+
+        for i, e in enumerate(self.events):
+            self.eventComboBox.setItemText(i, _translate('MainWindow', e))
 
         self.timeStepLabel.setText(_translate("MainWindow", "Time Step"))
         self.timeStepLabel.setProperty(
