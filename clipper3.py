@@ -1370,6 +1370,7 @@ class VTKUtils:
             raise ValueError(f'ERROR: unrecognized camera name: {camera_name}')
         
         return camera
+    # TODO: edit so birds eye possible
 
     def clock_as_str(cl: float) -> str:
         return spice.timout(int(cl), 'AP:MN:SC AMPM Month DD, YYYY')
@@ -1782,6 +1783,7 @@ class MainWindow(QMainWindow):
                     cam_setting['up'])
                 self.graphics.all_actors['text']['bodies'].SetInput(
                     'Current Focus: {}'.format(self.state.params.planet_focus))
+        # TODO: replace with change_planet_focus()
 
             # Overrides the default vtk behavior for keypress '3'
             if int(new_key) == 3:
