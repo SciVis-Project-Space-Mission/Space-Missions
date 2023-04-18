@@ -1325,7 +1325,8 @@ class VTKUtils:
     '''
     Default viewpoints for various camera location / target combinations
     '''
-    def vantage_point(camera_name: str, data: DataLoader) -> vtk.vtkCamera:
+    def vantage_point(camera_name: str, data: DataLoader, be=False) -> vtk.vtkCamera:
+        
         camera = vtk.vtkCamera()
         far = 10000000
 
@@ -1353,9 +1354,13 @@ class VTKUtils:
             # tethered to a planet, following trajectory
             bodyname = camera_name[1]
             r = data.bodies[bodyname].get_max_radius()
-            camera.SetPosition(5*r, 0, 0) # TODO: view from x-axis, change this offset to z?
+            if be:
+                camera.SetPosition(0, 0, 5*r)
+                camera.SetViewUp(0, 1, 0)
+            else:
+                camera.SetPosition(5*r, 0, 0)
+                camera.SetViewUp(0, 0, 1)
             camera.SetFocalPoint(0, 0, 0)
-            camera.SetViewUp(0, 0, 1)
             camera.SetViewAngle(45)
             camera.SetClippingRange(r, 50*r)
         elif camera_name[0] == 'Clipper':
@@ -1370,7 +1375,6 @@ class VTKUtils:
             raise ValueError(f'ERROR: unrecognized camera name: {camera_name}')
         
         return camera
-    # TODO: edit so birds eye possible
 
     def clock_as_str(cl: float) -> str:
         return spice.timout(int(cl), 'AP:MN:SC AMPM Month DD, YYYY')
@@ -1689,14 +1693,10 @@ class MainWindow(QMainWindow):
         self.view_angle_locked = False
         self.near_clipping_locked = False
         self.far_clipping_locked = False
+    
+    def change_planet_focus(self, anchor, target, ref_camera=None):
 
-    ''' 
-    Callback functions from Simulation
-    '''
-    def anchor_or_target_changed_cb(self, unused_id):
         print('anchor or target changed...')
-        anchor = self.ui.anchors[self.ui.cameraPositionComboBox.currentIndex()]
-        target = self.ui.targets[self.ui.cameraTargetComboBox.currentIndex()]
         print('anchor={}, target={}'.format(anchor, target))
         selected_frame = None
         if anchor == 'Cape Canaveral' or target == 'Sky':
@@ -1738,7 +1738,9 @@ class MainWindow(QMainWindow):
         self.ui.clippingFarSpinBox.setValue(self.state.current_camera[self.state.active_frame].GetClippingRange()[1])
         self.ui.clippingFarSpinBox.blockSignals(False)
 
-        ref_camera = self.state.default_camera[selected_frame]
+        if ref_camera is None:
+            ref_camera = self.state.default_camera[selected_frame]
+
         if self.ui.resetCameraPosition.checkState()==2 and self.ui.resetCameraTarget.checkState()==2:
             self.state.current_camera[selected_frame] = duplicate_camera(ref_camera)
         elif self.ui.resetCameraPosition.checkState()==2:
@@ -1755,6 +1757,15 @@ class MainWindow(QMainWindow):
         # self.graphics.renderers['bodies'].SetActiveCamera(local2global(self.data.dynbodyframe[selected_frame], self.state.current_camera[selected_frame], self.state.clock))
         self.graphics.renderers['bodies'].SetActiveCamera(local2global(f, c, self.state.clock))
         self.graphics.window.Render()
+
+    ''' 
+    Callback functions from Simulation
+    '''
+    def anchor_or_target_changed_cb(self, unused_id):
+        anchor = self.ui.anchors[self.ui.cameraPositionComboBox.currentIndex()]
+        target = self.ui.targets[self.ui.cameraTargetComboBox.currentIndex()]
+
+        self.change_planet_focus(anchor, target)
  
     def quit_cb(self):
         sys.exit(0)

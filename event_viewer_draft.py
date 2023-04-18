@@ -195,10 +195,10 @@ def anchor_or_target_changed_cb(self, unused_id):
     anchor = self.ui.anchors[self.ui.cameraPositionComboBox.currentIndex()]
     target = self.ui.targets[self.ui.cameraTargetComboBox.currentIndex()]
 
-    change_planet_focus(anchor, target)
+    self.change_planet_focus(anchor, target)
 
 
-def play_event(self, event_name):
+def play_event_cb(self, event_name):
 
     events_time_st = {
         'launch': 'year month, day hour:minute:second'
@@ -207,7 +207,7 @@ def play_event(self, event_name):
         'launch': 'year month, day hour:minute:second'
     }
     events_time_scale = {
-        'launch': time_step_changed_1minute_cb
+        'launch': self.time_step_changed_1minute_cb
     }
     events_frame = {
         'launch': (None, 'Earth')
@@ -223,7 +223,7 @@ def play_event(self, event_name):
     anchor = frame[0]
     target = frame[1]
     event_camera = VTKUtils.vantage_point(camera_name=frame, data=self.data, be=True)
-    change_planet_focus(anchor, target, ref_camera=event_camera)
+    self.change_planet_focus(anchor, target, ref_camera=event_camera)
 
     self.time_end = events_time_ed[event_name]
     # TODO: need to poll for when self.state.clock >= self.time_end
