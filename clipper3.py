@@ -138,6 +138,8 @@ class Ui_MainWindow(object):
         for i in self.anchors.keys():
             self.anchor_to_id[self.anchors[i]] = i
 
+        self.events = ['No Event', 'launch']
+
         MainWindow.setObjectName("MainWindow")
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
@@ -221,7 +223,6 @@ class Ui_MainWindow(object):
         self.calendar = QDateTimeEdit(self.timePointBox)
         self.calendar.setObjectName("calendar")
         self.timePointLayout.addWidget(self.calendar)
-        self.events = ['launch']
         self.eventComboBox = QComboBox(self.timePointBox)
         self.eventComboBox.setObjectName("eventComboBox")
         for i in range(len(self.events)):
@@ -1371,11 +1372,12 @@ class VTKUtils:
             if be:
                 camera.SetPosition(0, 0, 5*r)
                 camera.SetViewUp(0, 1, 0)
+                camera.SetViewAngle(0) # TODO: what is this?, how to get view above?
             else:
                 camera.SetPosition(5*r, 0, 0)
                 camera.SetViewUp(0, 0, 1)
+                camera.SetViewAngle(45)
             camera.SetFocalPoint(0, 0, 0)
-            camera.SetViewAngle(45)
             camera.SetClippingRange(r, 50*r)
         elif camera_name[0] == 'Clipper':
             # anchored at spacecraft 
@@ -2177,11 +2179,11 @@ class MainWindow(QMainWindow):
         if self.state.what_tether != 'None':
             self.state.params.paused = False
             self.state.skip_next_update = True
+    
+    def date_change(self, et):
 
-    # returns date in days since start
-    def date_change_cb(self, datetime: QDateTime):
         current = self.state.clock
-        self.state.clock = Units.QDateTime2time(datetime)
+        self.state.clock = et
 
         renderer = VTKUtils.get_renderer(self.graphics.window)
 
@@ -2228,7 +2230,49 @@ class MainWindow(QMainWindow):
         #     print(f'{actor.GetObjectName()}')
         #     actor = actors.GetNextActor()
 
+    # returns date in days since start
+    def date_change_cb(self, datetime: QDateTime):
+        et = Units.QDateTime2time(datetime)
+
+        self.date_change(et)
+
     # TODO: add date_change() and make date_change_cb() to Qtime conversion and call
+
+    def play_event_cb(self, event_id):
+
+        event_name = self.ui.events[event_id]
+
+        if event_name != 'No Event':
+
+            events_time_st = {
+                'launch': '2023 05, 11 08:00:00'
+            }
+            events_time_ed = {
+                'launch': '2023 05, 11 09:00:00'
+            }
+            events_time_scale = {
+                'launch': self.time_step_changed_1minute_cb
+            }
+            events_frame = {
+                'launch': ('None', 'Earth')
+            }
+
+            # TODO: start paused?
+
+            time_st = events_time_st[event_name]
+            et_st = spice.utc2et(time_st)
+            self.date_change(et_st)
+
+            events_time_scale[event_name]()
+
+            frame = events_frame[event_name]
+            anchor = frame[0]
+            target = frame[1]
+            event_camera = VTKUtils.vantage_point(camera_name=frame, data=self.data, be=True)
+            self.change_planet_focus(anchor, target, ref_camera=event_camera)
+
+            self.time_end = events_time_ed[event_name]
+            # TODO: need to poll for when self.state.clock >= self.time_end
 
     def planet_scale_dial_changed_cb(self, value):
         self.ui.scaleSpinBox.blockSignals(True)
@@ -2634,6 +2678,8 @@ class MainWindow(QMainWindow):
         # self.ui.calendar.activated.connect(self.date_activated_cb)
         # self.ui.calendar.currentPageChanged.connect(self.date_page_changed_cb)
         # self.ui.calendar.selectionChanged.connect(self.date_selection_changed_cb)
+
+        self.ui.eventComboBox.currentIndexChanged.connect(self.play_event_cb)
 
         # camera control
         self.ui.viewAngleDial.setMinimum(5)
