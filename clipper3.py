@@ -138,6 +138,8 @@ class Ui_MainWindow(object):
         for i in self.anchors.keys():
             self.anchor_to_id[self.anchors[i]] = i
 
+        self.events = ['No Event', 'launch']
+
         MainWindow.setObjectName("MainWindow")
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
@@ -213,10 +215,20 @@ class Ui_MainWindow(object):
             self.timeControlLayout.addWidget(self.timestepRadioButton[i])
         self.mainGridLayout.addWidget(self.timeControlBox, 1, 1, 1, 1)
 
+        self.timePointBox = QGroupBox(self.centralwidget)
+        self.timePointBox.setObjectName("timePointBox")
+        self.timePointLayout = QVBoxLayout(self.timePointBox)
+        self.timePointLayout.setObjectName("timePointLayout")
         # self.calendar = QCalendarWidget(self.centralwidget)
-        self.calendar = QDateTimeEdit()
+        self.calendar = QDateTimeEdit(self.timePointBox)
         self.calendar.setObjectName("calendar")
-        self.mainGridLayout.addWidget(self.calendar, 1, 2, 1, 1)
+        self.timePointLayout.addWidget(self.calendar)
+        self.eventComboBox = QComboBox(self.timePointBox)
+        self.eventComboBox.setObjectName("eventComboBox")
+        for i in range(len(self.events)):
+            self.eventComboBox.addItem('')
+        self.timePointLayout.addWidget(self.eventComboBox)
+        self.mainGridLayout.addWidget(self.timePointBox, 1, 2, 1, 1)
 
         self.cameraControl = QGroupBox(self.centralwidget)
         self.cameraControl.setObjectName('cameraControl')
@@ -324,6 +336,9 @@ class Ui_MainWindow(object):
                 i, _translate("MainWindow", a))
         self.resetCameraPosition.setText(_translate('MainWindow', 'Reset'))
         self.scaleLabel.setText(_translate("MainWindow", "Scale"))
+
+        for i, e in enumerate(self.events):
+            self.eventComboBox.setItemText(i, _translate('MainWindow', e))
 
         self.timeStepLabel.setText(_translate("MainWindow", "Time Step"))
         self.timeStepLabel.setProperty(
@@ -1011,8 +1026,6 @@ class DataLoader:
         # load the data
         myprint(verbose=verbose, text='loading the data from NAIF files...')
         spice.furnsh(os.path.join(naif_path, '19F23_VEEGA_L230511_A290930_LP01_V2_scpse.bsp')) # clipper
-        # spice.furnsh(os.path.join(naif_path, '21F31_MEGA_L241010_A300411_LP01_V4_postLaunch_scpse.bsp'))
-        # spice.furnsh(os.path.join(naif_path, '21F31_MEGA_L241010_A300411_LP01_V5_pad_scpse.bsp'))
         spice.furnsh(os.path.join(naif_path, 'naif0012.tls')) # bodies' dynamics
         spice.furnsh(os.path.join(naif_path, 'pck00010.tpc')) # bodies' constant values and orientation
         myprint(verbose=verbose, text='...done')
@@ -1325,7 +1338,8 @@ class VTKUtils:
     '''
     Default viewpoints for various camera location / target combinations
     '''
-    def vantage_point(camera_name: str, data: DataLoader) -> vtk.vtkCamera:
+    def vantage_point(camera_name: str, data: DataLoader, be=False) -> vtk.vtkCamera:
+        
         camera = vtk.vtkCamera()
         far = 10000000
 
@@ -1353,10 +1367,14 @@ class VTKUtils:
             # tethered to a planet, following trajectory
             bodyname = camera_name[1]
             r = data.bodies[bodyname].get_max_radius()
-            camera.SetPosition(5*r, 0, 0) # TODO: view from x-axis, change this offset to z?
-            camera.SetFocalPoint(0, 0, 0)
-            camera.SetViewUp(0, 0, 1)
+            if be:
+                camera.SetPosition(0, 0, 5*r)
+                camera.SetViewUp(0, 1, 0)
+            else:
+                camera.SetPosition(5*r, 0, 0)
+                camera.SetViewUp(0, 0, 1)
             camera.SetViewAngle(45)
+            camera.SetFocalPoint(0, 0, 0)
             camera.SetClippingRange(r, 50*r)
         elif camera_name[0] == 'Clipper':
             # anchored at spacecraft 
@@ -1688,14 +1706,10 @@ class MainWindow(QMainWindow):
         self.view_angle_locked = False
         self.near_clipping_locked = False
         self.far_clipping_locked = False
+    
+    def change_planet_focus(self, anchor, target, ref_camera=None):
 
-    ''' 
-    Callback functions from Simulation
-    '''
-    def anchor_or_target_changed_cb(self, unused_id):
         print('anchor or target changed...')
-        anchor = self.ui.anchors[self.ui.cameraPositionComboBox.currentIndex()]
-        target = self.ui.targets[self.ui.cameraTargetComboBox.currentIndex()]
         print('anchor={}, target={}'.format(anchor, target))
         selected_frame = None
         if anchor == 'Cape Canaveral' or target == 'Sky':
@@ -1737,7 +1751,9 @@ class MainWindow(QMainWindow):
         self.ui.clippingFarSpinBox.setValue(self.state.current_camera[self.state.active_frame].GetClippingRange()[1])
         self.ui.clippingFarSpinBox.blockSignals(False)
 
-        ref_camera = self.state.default_camera[selected_frame]
+        if ref_camera is None:
+            ref_camera = self.state.default_camera[selected_frame]
+
         if self.ui.resetCameraPosition.checkState()==2 and self.ui.resetCameraTarget.checkState()==2:
             self.state.current_camera[selected_frame] = duplicate_camera(ref_camera)
         elif self.ui.resetCameraPosition.checkState()==2:
@@ -1754,6 +1770,15 @@ class MainWindow(QMainWindow):
         # self.graphics.renderers['bodies'].SetActiveCamera(local2global(self.data.dynbodyframe[selected_frame], self.state.current_camera[selected_frame], self.state.clock))
         self.graphics.renderers['bodies'].SetActiveCamera(local2global(f, c, self.state.clock))
         self.graphics.window.Render()
+
+    ''' 
+    Callback functions from Simulation
+    '''
+    def anchor_or_target_changed_cb(self, unused_id):
+        anchor = self.ui.anchors[self.ui.cameraPositionComboBox.currentIndex()]
+        target = self.ui.targets[self.ui.cameraTargetComboBox.currentIndex()]
+
+        self.change_planet_focus(anchor, target)
  
     def quit_cb(self):
         sys.exit(0)
@@ -1782,6 +1807,7 @@ class MainWindow(QMainWindow):
                     cam_setting['up'])
                 self.graphics.all_actors['text']['bodies'].SetInput(
                     'Current Focus: {}'.format(self.state.params.planet_focus))
+        # TODO: bugged, replace with change_planet_focus()
 
             # Overrides the default vtk behavior for keypress '3'
             if int(new_key) == 3:
@@ -2150,11 +2176,11 @@ class MainWindow(QMainWindow):
         if self.state.what_tether != 'None':
             self.state.params.paused = False
             self.state.skip_next_update = True
+    
+    def date_change(self, et):
 
-    # returns date in days since start
-    def date_change_cb(self, datetime: QDateTime):
         current = self.state.clock
-        self.state.clock = Units.QDateTime2time(datetime)
+        self.state.clock = et
 
         renderer = VTKUtils.get_renderer(self.graphics.window)
 
@@ -2200,6 +2226,47 @@ class MainWindow(QMainWindow):
         # while actor is not None:
         #     print(f'{actor.GetObjectName()}')
         #     actor = actors.GetNextActor()
+
+    # returns date in days since start
+    def date_change_cb(self, datetime: QDateTime):
+        et = Units.QDateTime2time(datetime)
+
+        self.date_change(et)
+
+    def play_event_cb(self, event_id):
+
+        event_name = self.ui.events[event_id]
+
+        if event_name == 'No Event':
+            return
+
+        events_time_st = {
+            'launch': '2023 05, 11 08:00:00'
+        }
+        # events_time_ed = {
+        #     'launch': '2023 05, 11 09:00:00'
+        # }
+        events_time_scale = {
+            'launch': self.time_step_changed_1minute_cb
+        }
+        events_frame = {
+            'launch': ('None', 'Earth')
+        }
+
+        time_st = events_time_st[event_name]
+        et_st = spice.utc2et(time_st)
+        self.date_change(et_st)
+
+        events_time_scale[event_name]()
+
+        frame = events_frame[event_name]
+        anchor = frame[0]
+        target = frame[1]
+        event_camera = VTKUtils.vantage_point(camera_name=frame, data=self.data, be=True)
+        self.change_planet_focus(anchor, target, ref_camera=event_camera)
+
+        # self.time_end = events_time_ed[event_name]
+        # need to poll for when self.state.clock >= self.time_end
 
     def planet_scale_dial_changed_cb(self, value):
         self.ui.scaleSpinBox.blockSignals(True)
@@ -2605,6 +2672,8 @@ class MainWindow(QMainWindow):
         # self.ui.calendar.activated.connect(self.date_activated_cb)
         # self.ui.calendar.currentPageChanged.connect(self.date_page_changed_cb)
         # self.ui.calendar.selectionChanged.connect(self.date_selection_changed_cb)
+
+        self.ui.eventComboBox.currentIndexChanged.connect(self.play_event_cb)
 
         # camera control
         self.ui.viewAngleDial.setMinimum(5)
