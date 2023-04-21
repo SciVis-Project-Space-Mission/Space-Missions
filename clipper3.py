@@ -1026,8 +1026,6 @@ class DataLoader:
         # load the data
         myprint(verbose=verbose, text='loading the data from NAIF files...')
         spice.furnsh(os.path.join(naif_path, '19F23_VEEGA_L230511_A290930_LP01_V2_scpse.bsp')) # clipper
-        # spice.furnsh(os.path.join(naif_path, '21F31_MEGA_L241010_A300411_LP01_V4_postLaunch_scpse.bsp'))
-        # spice.furnsh(os.path.join(naif_path, '21F31_MEGA_L241010_A300411_LP01_V5_pad_scpse.bsp'))
         spice.furnsh(os.path.join(naif_path, 'naif0012.tls')) # bodies' dynamics
         spice.furnsh(os.path.join(naif_path, 'pck00010.tpc')) # bodies' constant values and orientation
         myprint(verbose=verbose, text='...done')
@@ -2235,41 +2233,40 @@ class MainWindow(QMainWindow):
 
         self.date_change(et)
 
-    # TODO: add date_change() and make date_change_cb() to Qtime conversion and call
-
     def play_event_cb(self, event_id):
 
         event_name = self.ui.events[event_id]
 
-        if event_name != 'No Event':
+        if event_name == 'No Event':
+            return
 
-            events_time_st = {
-                'launch': '2023 05, 11 08:00:00'
-            }
-            # events_time_ed = {
-            #     'launch': '2023 05, 11 09:00:00'
-            # }
-            events_time_scale = {
-                'launch': self.time_step_changed_1minute_cb
-            }
-            events_frame = {
-                'launch': ('None', 'Earth')
-            }
+        events_time_st = {
+            'launch': '2023 05, 11 08:00:00'
+        }
+        # events_time_ed = {
+        #     'launch': '2023 05, 11 09:00:00'
+        # }
+        events_time_scale = {
+            'launch': self.time_step_changed_1minute_cb
+        }
+        events_frame = {
+            'launch': ('None', 'Earth')
+        }
 
-            time_st = events_time_st[event_name]
-            et_st = spice.utc2et(time_st)
-            self.date_change(et_st)
+        time_st = events_time_st[event_name]
+        et_st = spice.utc2et(time_st)
+        self.date_change(et_st)
 
-            events_time_scale[event_name]()
+        events_time_scale[event_name]()
 
-            frame = events_frame[event_name]
-            anchor = frame[0]
-            target = frame[1]
-            event_camera = VTKUtils.vantage_point(camera_name=frame, data=self.data, be=True)
-            self.change_planet_focus(anchor, target, ref_camera=event_camera)
+        frame = events_frame[event_name]
+        anchor = frame[0]
+        target = frame[1]
+        event_camera = VTKUtils.vantage_point(camera_name=frame, data=self.data, be=True)
+        self.change_planet_focus(anchor, target, ref_camera=event_camera)
 
-            # self.time_end = events_time_ed[event_name]
-            # need to poll for when self.state.clock >= self.time_end
+        # self.time_end = events_time_ed[event_name]
+        # need to poll for when self.state.clock >= self.time_end
 
     def planet_scale_dial_changed_cb(self, value):
         self.ui.scaleSpinBox.blockSignals(True)

@@ -7,7 +7,7 @@ def change_planet_focus_key(self, target):
         self.state.planet_focus_changed = True
         self.state.params.do_tether = True
         cam_setting = VTKUtils.vantage_point(
-            target_name=self.state.params.planet_focus, data=self.data, et=self.state.cloc, be=True) # TODO: what is target_name, et?
+            target_name=self.state.params.planet_focus, data=self.data, et=self.state.cloc, be=True) # params are wrong
         VTKUtils.get_camera(self.graphics.window).SetPosition(
             cam_setting['pos'])
         VTKUtils.get_camera(self.graphics.window).SetFocalPoint(
