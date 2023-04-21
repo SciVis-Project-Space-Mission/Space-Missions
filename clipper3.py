@@ -1025,7 +1025,9 @@ class DataLoader:
     def __init__(self, media_path='./media', naif_path='./naif', scale=1):
         # load the data
         myprint(verbose=verbose, text='loading the data from NAIF files...')
-        spice.furnsh(os.path.join(naif_path, '19F23_VEEGA_L230511_A290930_LP01_V2_scpse.bsp')) # clipper
+        # spice.furnsh(os.path.join(naif_path, '19F23_VEEGA_L230511_A290930_LP01_V2_scpse.bsp')) # clipper
+        # spice.furnsh(os.path.join(naif_path, '21F31_MEGA_L241010_A300411_LP01_V4_postLaunch_scpse.bsp'))
+        spice.furnsh(os.path.join(naif_path, '21F31_MEGA_L241010_A300411_LP01_V5_pad_scpse.bsp'))
         spice.furnsh(os.path.join(naif_path, 'naif0012.tls')) # bodies' dynamics
         spice.furnsh(os.path.join(naif_path, 'pck00010.tpc')) # bodies' constant values and orientation
         myprint(verbose=verbose, text='...done')
@@ -1136,7 +1138,9 @@ class DataLoader:
         # coverage dates for Clipper
         etb = spice.cell_double(10000)
         # entire duration of the mission
-        spice.spkcov(os.path.join(naif_path, '19F23_VEEGA_L230511_A290930_LP01_V2_scpse.bsp'), self.spice_id, etb)
+        # spice.spkcov(os.path.join(naif_path, '19F23_VEEGA_L230511_A290930_LP01_V2_scpse.bsp'), self.spice_id, etb)
+        # spice.spkcov(os.path.join(naif_path, '21F31_MEGA_L241010_A300411_LP01_V4_postLaunch_scpse.bsp'), self.spice_id, etb)
+        spice.spkcov(os.path.join(naif_path, '21F31_MEGA_L241010_A300411_LP01_V5_pad_scpse.bsp'), self.spice_id, etb)
         # arrival time
         arrival_time = spice.str2et('2029 SEP 27 18:26:02.4221 TDB')
         init_time = etb[0]
@@ -2241,7 +2245,7 @@ class MainWindow(QMainWindow):
             return
 
         events_time_st = {
-            'launch': '2023 05, 11 08:00:00'
+            'launch': '2024 10, 10 15:50:00'
         }
         # events_time_ed = {
         #     'launch': '2023 05, 11 09:00:00'
