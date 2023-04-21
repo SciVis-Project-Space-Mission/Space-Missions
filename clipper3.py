@@ -138,7 +138,8 @@ class Ui_MainWindow(object):
         for i in self.anchors.keys():
             self.anchor_to_id[self.anchors[i]] = i
 
-        self.events = ['No Event', 'launch']
+        # TODO: hardcode events
+        self.events = ['No Event', 'launch', 'mars assist']
 
         MainWindow.setObjectName("MainWindow")
         self.centralwidget = QWidget(MainWindow)
@@ -2237,6 +2238,7 @@ class MainWindow(QMainWindow):
 
         self.date_change(et)
 
+    # TODO: hardcode events
     def play_event_cb(self, event_id):
 
         event_name = self.ui.events[event_id]
@@ -2245,16 +2247,19 @@ class MainWindow(QMainWindow):
             return
 
         events_time_st = {
-            'launch': '2024 10, 10 15:50:00'
+            'launch': '2024 10, 10 15:50:00',
+            'mars assist': '2025 01, 29 22:00:00'
         }
         # events_time_ed = {
         #     'launch': '2023 05, 11 09:00:00'
         # }
         events_time_scale = {
-            'launch': self.time_step_changed_1minute_cb
+            'launch': self.time_step_changed_1minute_cb,
+            'mars assist': self.time_step_changed_1day_cb
         }
         events_frame = {
-            'launch': ('None', 'Earth')
+            'launch': ('None', 'Earth'),
+            'mars assist': ('None', 'Mars')
         }
 
         time_st = events_time_st[event_name]
