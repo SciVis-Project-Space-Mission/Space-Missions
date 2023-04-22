@@ -139,7 +139,7 @@ class Ui_MainWindow(object):
             self.anchor_to_id[self.anchors[i]] = i
 
         # TODO: hardcode events
-        self.events = ['No Event', 'launch', 'mars assist']
+        self.events = ['No Event', 'launch', 'Mars assist', 'Earth assist']
 
         MainWindow.setObjectName("MainWindow")
         self.centralwidget = QWidget(MainWindow)
@@ -664,6 +664,7 @@ class Schedule:
         self.mission_timeline= np.concatenate((self.prelaunch_timeline, self.launch_phase, self.transfer_timeline, self.tour_timeline))
         self.active_mission_timeline = np.concatenate((self.launch_phase, self.transfer_timeline, self.tour_timeline))
 
+# TODO: function for launch time
 '''
 Clipper:
 A class to represent the Clipper spacecraft, including position, orbit, and graphical representation
@@ -1143,12 +1144,13 @@ class DataLoader:
         # spice.spkcov(os.path.join(naif_path, '21F31_MEGA_L241010_A300411_LP01_V4_postLaunch_scpse.bsp'), self.spice_id, etb)
         spice.spkcov(os.path.join(naif_path, '21F31_MEGA_L241010_A300411_LP01_V5_pad_scpse.bsp'), self.spice_id, etb)
         # arrival time
-        arrival_time = spice.str2et('2029 SEP 27 18:26:02.4221 TDB')
+        arrival_time = spice.str2et('2029 SEP 27 18:26:02.4221 TDB') # TODO: need to edit this for new data?
         init_time = etb[0]
         final_time = etb[1]
         # selected_interval = [init_time, final_time]
         print(f'init time={init_time}, final_time={final_time}')
         print(f'init_time={spice.etcal(init_time)}, final_time={spice.etcal(final_time)}')
+        # TODO: get clipper class for launch time here
         self.schedule = Schedule(init=init_time, arrival=arrival_time, end=final_time)
 
         # query states during entire mission for clipper and relevant planets
@@ -1206,6 +1208,7 @@ class DataLoader:
             self.bodies[name] = Body(name, self.texture_files[name], self.meridian_rotation[name], self.radii[name], self.planet_colors[name])
             self.bodies[name].set_states(self.full_paths[name], self.schedule.full_timeline, default_frame)
 
+        # Set Clipper body frames
         self.clipper = Clipper(self)
         self.dynbodyframe = {}
         for name in self.planet_names:
@@ -2248,19 +2251,23 @@ class MainWindow(QMainWindow):
 
         events_time_st = {
             'launch': '2024 10, 10 15:50:00',
-            'mars assist': '2025 01, 29 22:00:00'
+            'Mars assist': '2025 01, 20 00:00:00',
+            'Earth assist': '2026 11, 10 00:00:00'
         }
-        # events_time_ed = {
-        #     'launch': '2023 05, 11 09:00:00'
-        # }
         events_time_scale = {
             'launch': self.time_step_changed_1minute_cb,
-            'mars assist': self.time_step_changed_1day_cb
+            'Mars assist': self.time_step_changed_1day_cb,
+            'Earth assist': self.time_step_changed_1day_cb
         }
         events_frame = {
             'launch': ('None', 'Earth'),
-            'mars assist': ('None', 'Mars')
+            'Mars assist': ('None', 'Mars'),
+            'Earth assist': ('None', 'Earth')
         }
+        # TODO: choreograph camera position
+        # events_camera = {
+        #     'launch': ()
+        # }
 
         time_st = events_time_st[event_name]
         et_st = spice.utc2et(time_st)
