@@ -139,7 +139,8 @@ class Ui_MainWindow(object):
             self.anchor_to_id[self.anchors[i]] = i
 
         # TODO: hardcode events
-        self.events = ['No Event', 'launch', 'Mars assist', 'Earth assist']
+        self.events = ['No Event', 'launch', 'Mars assist', 'Earth assist',
+                       'Jupiter capture', 'Europa flyby']
 
         MainWindow.setObjectName("MainWindow")
         self.centralwidget = QWidget(MainWindow)
@@ -1826,7 +1827,7 @@ class MainWindow(QMainWindow):
             self.graphics.all_actors['text']['bodies'].SetInput(
                 'Current Focus: None')
             self.state.params.do_tether = False
-        elif new_key == 'o' or new_key == 'O':
+        elif new_key == 'o' or new_key == 'O': # TODO: orbits bugged, circuit eventually not complete
             self.state.params.show_orbits = not self.state.params.show_orbits
             if self.state.params.show_orbits:
                 myprint(verbose=True, text='now showing orbits')
@@ -2252,17 +2253,23 @@ class MainWindow(QMainWindow):
         events_time_st = {
             'launch': '2024 10, 10 15:50:00',
             'Mars assist': '2025 01, 20 00:00:00',
-            'Earth assist': '2026 11, 10 00:00:00'
+            'Earth assist': '2026 11, 10 00:00:00',
+            'Jupiter capture': '2029 12, 00 00:00:00',
+            'Europa flyby': '2031 05, 27 00:00:00'
         }
         events_time_scale = {
             'launch': self.time_step_changed_1minute_cb,
             'Mars assist': self.time_step_changed_1day_cb,
-            'Earth assist': self.time_step_changed_1day_cb
+            'Earth assist': self.time_step_changed_1day_cb,
+            'Jupiter capture': self.time_step_changed_1week_cb,
+            'Europa flyby': self.time_step_changed_15minutes_cb
         }
         events_frame = {
             'launch': ('None', 'Earth'),
             'Mars assist': ('None', 'Mars'),
-            'Earth assist': ('None', 'Earth')
+            'Earth assist': ('None', 'Earth'),
+            'Jupiter capture': ('None', 'Jupiter'),
+            'Europa flyby': ('None', 'Europa')
         }
         # TODO: choreograph camera position
         # events_camera = {
