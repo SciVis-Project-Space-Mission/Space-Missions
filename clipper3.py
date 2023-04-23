@@ -1347,7 +1347,7 @@ class VTKUtils:
     '''
     Default viewpoints for various camera location / target combinations
     '''
-    def vantage_point(camera_name: str, data: DataLoader, be=False) -> vtk.vtkCamera:
+    def vantage_point(camera_name: str, data: DataLoader, camera_pos=None, camera_view_up=None) -> vtk.vtkCamera:
         
         camera = vtk.vtkCamera()
         far = 10000000
@@ -1376,9 +1376,10 @@ class VTKUtils:
             # tethered to a planet, following trajectory
             bodyname = camera_name[1]
             r = data.bodies[bodyname].get_max_radius()
-            if be:
-                camera.SetPosition(0, 0, 5*r)
-                camera.SetViewUp(0, 1, 0)
+            if camera_pos is not None:
+                camera.SetPosition(*camera_pos)
+            if camera_view_up is not None:
+                camera.SetViewUp(*camera_view_up)
             else:
                 camera.SetPosition(5*r, 0, 0)
                 camera.SetViewUp(0, 0, 1)
@@ -2243,6 +2244,8 @@ class MainWindow(QMainWindow):
         self.date_change(et)
 
     # TODO: hardcode events
+    # TODO: need to update UI
+    # TODO: need UI to update clipping plane locs
     def play_event_cb(self, event_id):
 
         event_name = self.ui.events[event_id]
@@ -2252,14 +2255,14 @@ class MainWindow(QMainWindow):
 
         events_time_st = {
             'launch': '2024 10, 10 15:50:00',
-            'Mars assist': '2025 01, 20 00:00:00',
+            'Mars assist': '2025 02, 01 00:00:00',
             'Earth assist': '2026 11, 10 00:00:00',
             'Jupiter capture': '2029 12, 00 00:00:00',
             'Europa flyby': '2031 05, 27 00:00:00'
         }
         events_time_scale = {
             'launch': self.time_step_changed_1minute_cb,
-            'Mars assist': self.time_step_changed_1day_cb,
+            'Mars assist': self.time_step_changed_1hour_cb,
             'Earth assist': self.time_step_changed_1day_cb,
             'Jupiter capture': self.time_step_changed_1week_cb,
             'Europa flyby': self.time_step_changed_15minutes_cb
@@ -2272,9 +2275,20 @@ class MainWindow(QMainWindow):
             'Europa flyby': ('None', 'Europa')
         }
         # TODO: choreograph camera position
-        # events_camera = {
-        #     'launch': ()
-        # }
+        events_camera_pos = {
+            'launch': (0, 0, 5*self.data.bodies['Earth'].get_max_radius()),
+            'Mars assist': (0, 0, 100*self.data.bodies['Mars'].get_max_radius()),
+            'Earth assist': (0, 0, 100*self.data.bodies['Earth'].get_max_radius()),
+            'Jupiter capture': (0, 0, 5*self.data.bodies['Jupiter'].get_max_radius()),
+            'Europa flyby': (0, 0, 5*self.data.bodies['Europa'].get_max_radius())
+        }
+        events_camera_view_up = {
+            'launch': (0, 1, 0),
+            'Mars assist': (0, 1, 0),
+            'Earth assist': (0, 1, 0),
+            'Jupiter capture': (0, 1, 0),
+            'Europa flyby': (0, 1, 0)
+        }
 
         time_st = events_time_st[event_name]
         et_st = spice.utc2et(time_st)
@@ -2285,7 +2299,10 @@ class MainWindow(QMainWindow):
         frame = events_frame[event_name]
         anchor = frame[0]
         target = frame[1]
-        event_camera = VTKUtils.vantage_point(camera_name=frame, data=self.data, be=True)
+        pos = events_camera_pos[event_name]
+        up = events_camera_view_up[event_name]
+        event_camera = VTKUtils.vantage_point(camera_name=frame, data=self.data,
+                                              camera_pos=pos, camera_view_up=up)
         self.change_planet_focus(anchor, target, ref_camera=event_camera)
 
         # self.time_end = events_time_ed[event_name]
