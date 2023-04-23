@@ -2243,7 +2243,6 @@ class MainWindow(QMainWindow):
 
         self.date_change(et)
 
-    # TODO: hardcode events
     # TODO: need to update UI
     # TODO: need UI to update clipping plane locs
     def play_event_cb(self, event_id):
@@ -2255,16 +2254,16 @@ class MainWindow(QMainWindow):
 
         events_time_st = {
             'launch': '2024 10, 10 15:50:00',
-            'Mars assist': '2025 02, 01 00:00:00',
-            'Earth assist': '2026 11, 10 00:00:00',
-            'Jupiter capture': '2029 12, 00 00:00:00',
-            'Europa flyby': '2031 05, 27 00:00:00'
+            'Mars assist': '2025 02, 28 00:00:00',
+            'Earth assist': '2026 12, 01 12:00:00',
+            'Jupiter capture': '2028 08, 01 00:00:00',
+            'Europa flyby': '2031 05, 27 06:00:00'
         }
         events_time_scale = {
             'launch': self.time_step_changed_1minute_cb,
             'Mars assist': self.time_step_changed_1hour_cb,
-            'Earth assist': self.time_step_changed_1day_cb,
-            'Jupiter capture': self.time_step_changed_1week_cb,
+            'Earth assist': self.time_step_changed_1hour_cb,
+            'Jupiter capture': self.time_step_changed_1month_cb,
             'Europa flyby': self.time_step_changed_15minutes_cb
         }
         events_frame = {
@@ -2274,13 +2273,12 @@ class MainWindow(QMainWindow):
             'Jupiter capture': ('None', 'Jupiter'),
             'Europa flyby': ('None', 'Europa')
         }
-        # TODO: choreograph camera position
         events_camera_pos = {
             'launch': (0, 0, 5*self.data.bodies['Earth'].get_max_radius()),
             'Mars assist': (0, 0, 100*self.data.bodies['Mars'].get_max_radius()),
             'Earth assist': (0, 0, 100*self.data.bodies['Earth'].get_max_radius()),
-            'Jupiter capture': (0, 0, 5*self.data.bodies['Jupiter'].get_max_radius()),
-            'Europa flyby': (0, 0, 5*self.data.bodies['Europa'].get_max_radius())
+            'Jupiter capture': (0, 0, 8000*self.data.bodies['Jupiter'].get_max_radius()),
+            'Europa flyby': (0, 0, 100*self.data.bodies['Europa'].get_max_radius())
         }
         events_camera_view_up = {
             'launch': (0, 1, 0),
