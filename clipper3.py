@@ -642,7 +642,7 @@ def copy_camera(from_camera: vtk.vtkCamera, to_camera: vtk.vtkCamera) -> vtk.vtk
 Schedule:
 A class to encapsulate the date of the various events of the mission and the time intervals 
 in betweeen
-'''
+''' 
 class Schedule:
     def __init__(self, init: float, arrival: float, end: float):
         self.initial_time = init
@@ -1145,7 +1145,7 @@ class DataLoader:
         # spice.spkcov(os.path.join(naif_path, '21F31_MEGA_L241010_A300411_LP01_V4_postLaunch_scpse.bsp'), self.spice_id, etb)
         spice.spkcov(os.path.join(naif_path, '21F31_MEGA_L241010_A300411_LP01_V5_pad_scpse.bsp'), self.spice_id, etb)
         # arrival time
-        arrival_time = spice.str2et('2029 SEP 27 18:26:02.4221 TDB') # TODO: need to edit this for new data?
+        arrival_time = spice.str2et('2029 SEP 27 18:26:02.4221 TDB') # TODO: need to edit this for new data? vicinity of jupiter, tour starts
         init_time = etb[0]
         final_time = etb[1]
         # selected_interval = [init_time, final_time]
@@ -2242,8 +2242,23 @@ class MainWindow(QMainWindow):
         et = Units.QDateTime2time(datetime)
 
         self.date_change(et)
+    
+    def change_time_step_1minute(self):
+        self.ui.timestepRadioButton[0].setChecked(True)
+        self.time_step_changed_1minute_cb()
+    
+    def change_time_step_15minutes(self):
+        self.ui.timestepRadioButton[1].setChecked(True)
+        self.time_step_changed_15minutes_cb()
+    
+    def change_time_step_1hour(self):
+        self.ui.timestepRadioButton[3].setChecked(True)
+        self.time_step_changed_1hour_cb()
+    
+    def change_time_step_1month(self):
+        self.ui.timestepRadioButton[7].setChecked(True)
+        self.time_step_changed_1month_cb()
 
-    # TODO: need to update UI
     # TODO: need UI to update clipping plane locs
     def play_event_cb(self, event_id):
 
@@ -2260,11 +2275,11 @@ class MainWindow(QMainWindow):
             'Europa flyby': '2031 05, 27 06:00:00'
         }
         events_time_scale = {
-            'launch': self.time_step_changed_1minute_cb,
-            'Mars assist': self.time_step_changed_1hour_cb,
-            'Earth assist': self.time_step_changed_1hour_cb,
-            'Jupiter capture': self.time_step_changed_1month_cb,
-            'Europa flyby': self.time_step_changed_15minutes_cb
+            'launch': self.change_time_step_1minute,
+            'Mars assist': self.change_time_step_1hour,
+            'Earth assist': self.change_time_step_1hour,
+            'Jupiter capture': self.change_time_step_1month,
+            'Europa flyby': self.change_time_step_15minutes
         }
         events_frame = {
             'launch': ('None', 'Earth'),
@@ -2704,6 +2719,8 @@ class MainWindow(QMainWindow):
         self.ui.timestepRadioButton[5].pressed.connect(self.time_step_changed_1day_cb)
         self.ui.timestepRadioButton[6].pressed.connect(self.time_step_changed_1week_cb)
         self.ui.timestepRadioButton[7].pressed.connect(self.time_step_changed_1month_cb)
+
+        self.ui.timestepRadioButton[0].setChecked(True)
 
         # calendar column
         self.ui.calendar.dateTimeChanged.connect(self.date_change_cb)
