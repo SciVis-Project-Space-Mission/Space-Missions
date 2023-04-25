@@ -138,7 +138,6 @@ class Ui_MainWindow(object):
         for i in self.anchors.keys():
             self.anchor_to_id[self.anchors[i]] = i
 
-        # TODO: hardcode events
         self.events = ['No Event', 'launch', 'Mars assist', 'Earth assist',
                        'Jupiter capture', 'Europa flyby']
 
@@ -646,7 +645,7 @@ in betweeen
 class Schedule:
     def __init__(self, init: float, arrival: float, end: float):
         self.initial_time = init
-        self.launch_time = init + Units.duration(days=0.5) # TODO: need to edit this for new data?
+        self.launch_time = init + Units.duration(days=0.5)
         self.launch_duration = Units.duration(hours=2)
         print(f'launch time is {spice.timout(int(self.launch_time), "AP: MN: SC AMPM Month DD, YYYY")}')
         self.arrival_time = arrival
@@ -665,7 +664,6 @@ class Schedule:
         self.mission_timeline= np.concatenate((self.prelaunch_timeline, self.launch_phase, self.transfer_timeline, self.tour_timeline))
         self.active_mission_timeline = np.concatenate((self.launch_phase, self.transfer_timeline, self.tour_timeline))
 
-# TODO: function for launch time
 '''
 Clipper:
 A class to represent the Clipper spacecraft, including position, orbit, and graphical representation
@@ -1145,13 +1143,12 @@ class DataLoader:
         # spice.spkcov(os.path.join(naif_path, '21F31_MEGA_L241010_A300411_LP01_V4_postLaunch_scpse.bsp'), self.spice_id, etb)
         spice.spkcov(os.path.join(naif_path, '21F31_MEGA_L241010_A300411_LP01_V5_pad_scpse.bsp'), self.spice_id, etb)
         # arrival time
-        arrival_time = spice.str2et('2029 SEP 27 18:26:02.4221 TDB') # TODO: need to edit this for new data? vicinity of jupiter, tour starts
+        arrival_time = spice.str2et('2030 APR 11 00:00:00 TDB')
         init_time = etb[0]
         final_time = etb[1]
         # selected_interval = [init_time, final_time]
         print(f'init time={init_time}, final_time={final_time}')
         print(f'init_time={spice.etcal(init_time)}, final_time={spice.etcal(final_time)}')
-        # TODO: get clipper class for launch time here
         self.schedule = Schedule(init=init_time, arrival=arrival_time, end=final_time)
 
         # query states during entire mission for clipper and relevant planets
