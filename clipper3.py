@@ -704,6 +704,7 @@ class Clipper:
         # print(f'clipper steps = {data.full_paths["clipper"]}')
         self.intp = interpolate.make_interp_spline(x=self.schedule.mission_timeline, y=data.full_paths['clipper'])
         self.deriv = self.intp.derivative()
+        self.deriv2 = self.deriv.derivative()
         self.launch = self.schedule.launch_time
         print('clipper launch set to {} / '.format(self.launch, 
             spice.timout(int(self.launch), 'AP:MN:SC AMPM Month DD, YYYY')))
@@ -748,6 +749,12 @@ class Clipper:
 
     def get_position(self, et: float) -> np.ndarray:
         return self.intp(et)
+
+    def get_velocity(self, et: float) -> np.ndarray:
+        return self.deriv(et)
+
+    def get_acceleration(self, et: float) -> np.ndarray:
+        return self.deriv2(et)
     
     def get_tangent(self, et: float) -> np.ndarray:
         return self.deriv(et)
@@ -1134,7 +1141,7 @@ class DataLoader:
         # set frame and corrections
         self.default_frame = 'ECLIPJ2000'
         self.abcorr = 'NONE'
-
+ 
         myprint(verbose=verbose, text='Setting temporal domain for Clipper mission...')
         # coverage dates for Clipper
         etb = spice.cell_double(10000)
@@ -1643,6 +1650,12 @@ class Simulation:
 
         self.state.active_frame = ('None', 'Sun')
 
+    # function to calculate the disctance between Clipper and any Celestial body defined by the User/ Programmer
+    def getClipper2BodyDist(self, body=str):
+        p1 = self.data.bodies[body].get_position(self.state.clock)
+        p2 = self.data.clipper.get_position(self.state.clock)
+        return np.linalg.norm(p1-p2)
+
     # function called at every step of the internal clock of the simulation
     def timer_cb(self, obj, value):
         # no state update when paused
@@ -1680,6 +1693,13 @@ class Simulation:
                     # ra.SetPosition(self.graphics.all_actors['bodies']['Saturn'].GetPosition())
                     VTKUtils.copy_transformation(body.get_actor(), ra)
 
+        # calling the function to calculate the distance between Clipper and Europa at every time step
+        dClipper2Body = int(self.getClipper2BodyDist('Europa'))
+        # print('Distance from Clipper spacecraft to Europa is:', dClipper2Body, 'km')
+        ClipperVelocity = np.linalg.norm(self.data.clipper.get_velocity(self.state.clock))
+        # print('The Clipper velocity is', ClipperVelocity)
+        # exit()
+        ClipperAcceleration = np.linalg.norm(self.data.clipper.get_acceleration(self.state.clock))
 
         # extend Clipper's orbit
         self.data.clipper.update(clock)
@@ -1694,8 +1714,16 @@ class Simulation:
         self.data.clipper_model_actor.SetOrientation(0, 0, theta)
         self.graphics.all_actors['bodies']['Clipper model'] = self.data.clipper_model_actor
         self.graphics.all_actors['text']['time'].SetInput(timestr)
+        if self.data.clipper.has_launched == True:
+            self.graphics.all_actors['text']['distance'].SetInput('Clipper-Europa Distance (km): {:,}'.format(dClipper2Body))
+            self.graphics.all_actors['text']['velocity'].SetInput('Clipper Velocity (km/s): {:.3f}'.format(ClipperVelocity))
+            self.graphics.all_actors['text']['launch'].SetInput('Liftoff! Clipper spacecraft has launched successfully')
+            self.graphics.all_actors['text']['launch'].GetTextProperty().SetColor(0, 1.0, 0)
+            self.graphics.all_actors['text']['acceleration'].SetInput('Clipper Acceleration (km/s^2): {:.7f}'.format(ClipperAcceleration))
         self.render_window.Render()
         self.state.clock += self.state.time_step
+
+        
 
 '''
 The central class of the program that creates all the other ones and manages user interaction
@@ -2656,11 +2684,58 @@ class MainWindow(QMainWindow):
         text_actors['time'].GetTextProperty().SetFontSize(10)
         text_actors['time'].GetTextProperty().SetColor(1.0, 1.0, 1.0)
 
+        # Adding the distance visualization (Clipper-Europa distance calculations)
+        text_actors['distance'] = vtk.vtkTextActor()
+        text_actors['distance'].SetInput('Clipper-Europa distance Calculating...')
+        text_actors['distance'].GetPositionCoordinate().SetCoordinateSystemToNormalizedDisplay()
+        text_actors['distance'].GetPositionCoordinate().SetValue(0.01, 0.75)
+        text_actors['distance'].GetPosition2Coordinate().SetCoordinateSystemToNormalizedDisplay()
+        text_actors['distance'].GetPosition2Coordinate().SetValue(0.25, 0.75)
+        text_actors['distance'].GetTextProperty().SetFontSize(12)
+        text_actors['distance'].GetTextProperty().SetColor(1.0, 1.0, 0) 
+
+        # Adding the Clipper velocity visualization
+        text_actors['velocity'] = vtk.vtkTextActor()
+        text_actors['velocity'].SetInput('Stand by for Clipper Velocity...')
+        text_actors['velocity'].GetPositionCoordinate().SetCoordinateSystemToNormalizedDisplay()
+        text_actors['velocity'].GetPositionCoordinate().SetValue(0.01, 0.70)
+        text_actors['velocity'].GetPosition2Coordinate().SetCoordinateSystemToNormalizedDisplay()
+        text_actors['velocity'].GetPosition2Coordinate().SetValue(0.25, 0.70)
+        text_actors['velocity'].GetTextProperty().SetFontSize(12)
+        text_actors['velocity'].GetTextProperty().SetColor(0.016, 0.85, 1.0)
+        
+         # Adding the Clipper acceleration visualization
+        text_actors['acceleration'] = vtk.vtkTextActor()
+        text_actors['acceleration'].SetInput('Stand by for Clipper Acceleration...')
+        text_actors['acceleration'].GetPositionCoordinate().SetCoordinateSystemToNormalizedDisplay()
+        text_actors['acceleration'].GetPositionCoordinate().SetValue(0.01, 0.65)
+        text_actors['acceleration'].GetPosition2Coordinate().SetCoordinateSystemToNormalizedDisplay()
+        text_actors['acceleration'].GetPosition2Coordinate().SetValue(0.25, 0.65)
+        text_actors['acceleration'].GetTextProperty().SetFontSize(12)
+        text_actors['acceleration'].GetTextProperty().SetColor(1, 0.063, 0.96)
+
+        # Adding a sign for users to know when Clipper has launched
+        text_actors['launch'] = vtk.vtkTextActor()
+        text_actors['launch'].SetInput('Launch Sequence in progress...')
+        text_actors['launch'].GetPositionCoordinate().SetCoordinateSystemToNormalizedDisplay()
+        text_actors['launch'].GetPositionCoordinate().SetValue(0.01, 0.85)
+        text_actors['launch'].GetPosition2Coordinate().SetCoordinateSystemToNormalizedDisplay()
+        text_actors['launch'].GetPosition2Coordinate().SetValue(0.25, 0.85)
+        text_actors['launch'].GetTextProperty().SetFontSize(12)
+        text_actors['launch'].GetTextProperty().SetColor(1.0, 0, 0)
+        
+
+
+
         all_actors['text'] = text_actors
         myprint(verbose=verbose, text='...done')
 
         renderers['bodies'].AddActor2D(text_actors['time'])
         renderers['bodies'].AddActor2D(text_actors['bodies'])
+        renderers['bodies'].AddActor2D(text_actors['distance'])
+        renderers['bodies'].AddActor2D(text_actors['velocity'])
+        renderers['bodies'].AddActor2D(text_actors['launch'])
+        renderers['bodies'].AddActor2D(text_actors['acceleration'])
 
         render_window.AddRenderer(renderers['bodies'])
 
