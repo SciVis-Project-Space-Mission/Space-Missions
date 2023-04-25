@@ -641,7 +641,7 @@ def copy_camera(from_camera: vtk.vtkCamera, to_camera: vtk.vtkCamera) -> vtk.vtk
 Schedule:
 A class to encapsulate the date of the various events of the mission and the time intervals 
 in betweeen
-'''
+''' 
 class Schedule:
     def __init__(self, init: float, arrival: float, end: float):
         self.initial_time = init
@@ -1344,7 +1344,7 @@ class VTKUtils:
     '''
     Default viewpoints for various camera location / target combinations
     '''
-    def vantage_point(camera_name: str, data: DataLoader, be=False) -> vtk.vtkCamera:
+    def vantage_point(camera_name: str, data: DataLoader, camera_pos=None, camera_view_up=None) -> vtk.vtkCamera:
         
         camera = vtk.vtkCamera()
         far = 10000000
@@ -1373,9 +1373,10 @@ class VTKUtils:
             # tethered to a planet, following trajectory
             bodyname = camera_name[1]
             r = data.bodies[bodyname].get_max_radius()
-            if be:
-                camera.SetPosition(0, 0, 5*r)
-                camera.SetViewUp(0, 1, 0)
+            if camera_pos is not None:
+                camera.SetPosition(*camera_pos)
+            if camera_view_up is not None:
+                camera.SetViewUp(*camera_view_up)
             else:
                 camera.SetPosition(5*r, 0, 0)
                 camera.SetViewUp(0, 0, 1)
@@ -2238,7 +2239,24 @@ class MainWindow(QMainWindow):
         et = Units.QDateTime2time(datetime)
 
         self.date_change(et)
+    
+    def change_time_step_1minute(self):
+        self.ui.timestepRadioButton[0].setChecked(True)
+        self.time_step_changed_1minute_cb()
+    
+    def change_time_step_15minutes(self):
+        self.ui.timestepRadioButton[1].setChecked(True)
+        self.time_step_changed_15minutes_cb()
+    
+    def change_time_step_1hour(self):
+        self.ui.timestepRadioButton[3].setChecked(True)
+        self.time_step_changed_1hour_cb()
+    
+    def change_time_step_1month(self):
+        self.ui.timestepRadioButton[7].setChecked(True)
+        self.time_step_changed_1month_cb()
 
+    # TODO: need UI to update clipping plane locs
     def play_event_cb(self, event_id):
 
         event_name = self.ui.events[event_id]
@@ -2248,17 +2266,17 @@ class MainWindow(QMainWindow):
 
         events_time_st = {
             'launch': '2024 10, 10 15:50:00',
-            'Mars assist': '2025 01, 20 00:00:00',
-            'Earth assist': '2026 11, 10 00:00:00',
-            'Jupiter capture': '2029 12, 00 00:00:00',
-            'Europa flyby': '2031 05, 27 00:00:00'
+            'Mars assist': '2025 02, 28 00:00:00',
+            'Earth assist': '2026 12, 01 12:00:00',
+            'Jupiter capture': '2028 08, 01 00:00:00',
+            'Europa flyby': '2031 05, 27 06:00:00'
         }
         events_time_scale = {
-            'launch': self.time_step_changed_1minute_cb,
-            'Mars assist': self.time_step_changed_1day_cb,
-            'Earth assist': self.time_step_changed_1day_cb,
-            'Jupiter capture': self.time_step_changed_1week_cb,
-            'Europa flyby': self.time_step_changed_15minutes_cb
+            'launch': self.change_time_step_1minute,
+            'Mars assist': self.change_time_step_1hour,
+            'Earth assist': self.change_time_step_1hour,
+            'Jupiter capture': self.change_time_step_1month,
+            'Europa flyby': self.change_time_step_15minutes
         }
         events_frame = {
             'launch': ('None', 'Earth'),
@@ -2266,6 +2284,20 @@ class MainWindow(QMainWindow):
             'Earth assist': ('None', 'Earth'),
             'Jupiter capture': ('None', 'Jupiter'),
             'Europa flyby': ('None', 'Europa')
+        }
+        events_camera_pos = {
+            'launch': (0, 0, 5*self.data.bodies['Earth'].get_max_radius()),
+            'Mars assist': (0, 0, 100*self.data.bodies['Mars'].get_max_radius()),
+            'Earth assist': (0, 0, 100*self.data.bodies['Earth'].get_max_radius()),
+            'Jupiter capture': (0, 0, 8000*self.data.bodies['Jupiter'].get_max_radius()),
+            'Europa flyby': (0, 0, 100*self.data.bodies['Europa'].get_max_radius())
+        }
+        events_camera_view_up = {
+            'launch': (0, 1, 0),
+            'Mars assist': (0, 1, 0),
+            'Earth assist': (0, 1, 0),
+            'Jupiter capture': (0, 1, 0),
+            'Europa flyby': (0, 1, 0)
         }
 
         time_st = events_time_st[event_name]
@@ -2277,7 +2309,10 @@ class MainWindow(QMainWindow):
         frame = events_frame[event_name]
         anchor = frame[0]
         target = frame[1]
-        event_camera = VTKUtils.vantage_point(camera_name=frame, data=self.data, be=True)
+        pos = events_camera_pos[event_name]
+        up = events_camera_view_up[event_name]
+        event_camera = VTKUtils.vantage_point(camera_name=frame, data=self.data,
+                                              camera_pos=pos, camera_view_up=up)
         self.change_planet_focus(anchor, target, ref_camera=event_camera)
 
         # self.time_end = events_time_ed[event_name]
@@ -2681,6 +2716,8 @@ class MainWindow(QMainWindow):
         self.ui.timestepRadioButton[5].pressed.connect(self.time_step_changed_1day_cb)
         self.ui.timestepRadioButton[6].pressed.connect(self.time_step_changed_1week_cb)
         self.ui.timestepRadioButton[7].pressed.connect(self.time_step_changed_1month_cb)
+
+        self.ui.timestepRadioButton[0].setChecked(True)
 
         # calendar column
         self.ui.calendar.dateTimeChanged.connect(self.date_change_cb)
