@@ -1206,7 +1206,6 @@ class DataLoader:
             self.bodies[name] = Body(name, self.texture_files[name], self.meridian_rotation[name], self.radii[name], self.planet_colors[name])
             self.bodies[name].set_states(self.full_paths[name], self.schedule.full_timeline, default_frame)
 
-        # Set Clipper body frames
         self.clipper = Clipper(self)
         self.dynbodyframe = {}
         for name in self.planet_names:
