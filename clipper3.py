@@ -1720,6 +1720,12 @@ class Simulation:
             self.graphics.all_actors['text']['launch'].SetInput('Liftoff! Clipper spacecraft has launched successfully')
             self.graphics.all_actors['text']['launch'].GetTextProperty().SetColor(0, 1.0, 0)
             self.graphics.all_actors['text']['acceleration'].SetInput('Clipper Acceleration (km/s^2): {:.7f}'.format(ClipperAcceleration))
+        else:
+            self.graphics.all_actors['text']['distance'].SetInput('Clipper-Europa distance Calculating...')
+            self.graphics.all_actors['text']['velocity'].SetInput('Stand by for Clipper Velocity...')
+            self.graphics.all_actors['text']['launch'].SetInput('Launch Sequence in progress...')
+            self.graphics.all_actors['text']['launch'].GetTextProperty().SetColor(1.0, 0, 0)
+            self.graphics.all_actors['text']['acceleration'].SetInput('Stand by for Clipper Acceleration...')
         self.render_window.Render()
         self.state.clock += self.state.time_step
 
