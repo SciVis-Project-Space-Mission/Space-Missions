@@ -1696,10 +1696,13 @@ class Simulation:
         # calling the function to calculate the distance between Clipper and Europa at every time step
         dClipper2Body = int(self.getClipper2BodyDist('Europa'))
         # print('Distance from Clipper spacecraft to Europa is:', dClipper2Body, 'km')
-        ClipperVelocity = np.linalg.norm(self.data.clipper.get_velocity(self.state.clock))
+        clipper_velocity_vec = self.data.clipper.get_velocity(self.state.clock)
+        ClipperVelocity = np.linalg.norm(clipper_velocity_vec)
         # print('The Clipper velocity is', ClipperVelocity)
         # exit()
-        ClipperAcceleration = np.linalg.norm(self.data.clipper.get_acceleration(self.state.clock))
+        clipper_acceleration_vec = self.data.clipper.get_acceleration(self.state.clock)
+        vel_acc_proj = np.dot(clipper_velocity_vec, clipper_acceleration_vec)
+        ClipperAcceleration = math.copysign(np.linalg.norm(clipper_acceleration_vec), vel_acc_proj)
 
         # extend Clipper's orbit
         self.data.clipper.update(clock)
