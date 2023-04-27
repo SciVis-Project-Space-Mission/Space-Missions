@@ -2305,6 +2305,9 @@ class MainWindow(QMainWindow):
     def change_time_step_1month(self):
         self.ui.timestepRadioButton[7].setChecked(True)
         self.time_step_changed_1month_cb()
+    
+    def update_camera_focus_position_ui(self, target):
+        self.ui.cameraTargetComboBox.setCurrentIndex(self.ui.target_to_index(target))
 
     # TODO: need UI to update clipping plane locs
     def play_event_cb(self, event_id):
@@ -2364,6 +2367,7 @@ class MainWindow(QMainWindow):
         event_camera = VTKUtils.vantage_point(camera_name=frame, data=self.data,
                                               camera_pos=pos, camera_view_up=up)
         self.change_planet_focus(anchor, target, ref_camera=event_camera)
+        self.update_camera_focus_position_ui(target)
 
         # self.time_end = events_time_ed[event_name]
         # need to poll for when self.state.clock >= self.time_end
