@@ -11,6 +11,7 @@ import json
 import faulthandler
 import sys
 from datetime import datetime
+import matplotlib.pyplot as plt
 
 
 def make_reference_frame(origin: np.ndarray, X: np.ndarray, Y: np.ndarray, Z: np.ndarray, size: float) -> vtk.vtkActor:
@@ -1597,6 +1598,11 @@ Class to encapsulate various aspects of the simulation state
 class SimulationState:
     def __init__(self, params: Dict[str, Any], time_step: float, clock: float):
         self.params = params
+        if self.params.plt_metrics is not None:
+            self.timesteps_plt = []
+            self.clipper_europa_dist_plt = []
+            self.clipper_vel_plt = []
+            self.clipper_acc_plt = []
         self.time_step = time_step
         self.clock = clock
         self.tether_changed = False
@@ -1703,6 +1709,12 @@ class Simulation:
         clipper_acceleration_vec = self.data.clipper.get_acceleration(self.state.clock)
         vel_acc_proj = np.dot(clipper_velocity_vec, clipper_acceleration_vec)
         ClipperAcceleration = math.copysign(np.linalg.norm(clipper_acceleration_vec), vel_acc_proj)
+
+        if self.state.params.plt_metrics is not None:
+            self.state.timesteps_plt.append(clock)
+            self.state.clipper_europa_dist_plt.append(dClipper2Body)
+            self.state.clipper_vel_plt.append(ClipperVelocity)
+            self.state.clipper_acc_plt.append(ClipperAcceleration)
 
         # extend Clipper's orbit
         self.data.clipper.update(clock)
@@ -1824,6 +1836,8 @@ class MainWindow(QMainWindow):
         self.change_planet_focus(anchor, target)
  
     def quit_cb(self):
+        if self.state.params.plt_metrics is not None:
+            self.save_metrics_plts(self.state.params.plt_metrics)
         sys.exit(0)
 
     def anyevent_cb(self, obj, event):
@@ -2373,6 +2387,8 @@ class MainWindow(QMainWindow):
         self.state.params.paused = True
 
     def quit(self):
+        if self.state.params.plt_metrics is not None:
+            self.save_metrics_plts(self.state.params.plt_metrics)
         sys.exit(0)
 
     def timer_callback(self):
@@ -2472,6 +2488,31 @@ class MainWindow(QMainWindow):
         amax = Units.au_to_km(value)
         self.state.current_camera[self.state.active_frame].SetClippingRange(amin, amax)
         self.state.camera_modified = False
+
+    def save_metrics_plts(self, plt_metrics_path):
+        tsteps = self.state.timesteps_plt
+
+        plt.figure()
+        plt.plot(tsteps, self.state.clipper_europa_dist_plt)
+        plt.xlabel("clock time")
+        plt.ylabel("Clipper-Europa distance (km)")
+        plt.title("Clipper-Europa distance as a Function of Time")
+        plt.savefig(os.path.join(plt_metrics_path, "clipper_europa_dist.png"))
+
+        plt.figure()
+        plt.plot(tsteps, self.state.clipper_vel_plt)
+        plt.xlabel("clock time")
+        plt.ylabel("Clipper velocity (km/s)")
+        plt.title("Clipper velocity as a Function of Time")
+        plt.savefig(os.path.join(plt_metrics_path, "clipper_vel.png"))
+
+        plt.figure()
+        plt.plot(tsteps, self.state.clipper_acc_plt)
+        plt.ticklabel_format(axis='y', style='sci')
+        plt.xlabel("clock time")
+        plt.ylabel("Clipper acceleration (km/s^2)")
+        plt.title("Clipper acceleration as a Function of Time")
+        plt.savefig(os.path.join(plt_metrics_path, "clipper_acc.png"))
 
     def main(self, args):
         verbose = args.verbose
@@ -2859,7 +2900,10 @@ class MainWindow(QMainWindow):
         myprint(verbose=verbose, text='...done')
 
         myprint(verbose=verbose, text='Starting app...')
-        sys.exit(app.exec_())
+        app_return_code = app.exec_()
+        if self.state.params.plt_metrics is not None:
+            self.save_metrics_plts(self.state.params.plt_metrics)
+        sys.exit(app_return_code)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -2884,6 +2928,7 @@ if __name__ == '__main__':
     parser.add_argument('--verbose', action='store_true', help='Toggle verbose mode')
     parser.add_argument('--media_path', type=str, default='media', help='Path to media files')
     parser.add_argument('--naif_path', type=str, default='naif', help='Path to naif files')
+    parser.add_argument('--plt_metrics', type=str, nargs='?', const='', help='directory to plot metrics from simulation run')
     args = parser.parse_args()
 
     app = QApplication(sys.argv)
