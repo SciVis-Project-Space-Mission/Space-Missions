@@ -2362,12 +2362,12 @@ class MainWindow(QMainWindow):
         frame = events_frame[event_name]
         anchor = frame[0]
         target = frame[1]
+        self.update_camera_focus_position_ui(target)
         pos = events_camera_pos[event_name]
         up = events_camera_view_up[event_name]
         event_camera = VTKUtils.vantage_point(camera_name=frame, data=self.data,
                                               camera_pos=pos, camera_view_up=up)
         self.change_planet_focus(anchor, target, ref_camera=event_camera)
-        self.update_camera_focus_position_ui(target)
 
         # self.time_end = events_time_ed[event_name]
         # need to poll for when self.state.clock >= self.time_end
