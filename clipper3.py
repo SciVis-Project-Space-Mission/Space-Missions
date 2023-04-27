@@ -2763,27 +2763,27 @@ class MainWindow(QMainWindow):
         text_actors['distance'].GetPositionCoordinate().SetValue(0.01, 0.75)
         text_actors['distance'].GetPosition2Coordinate().SetCoordinateSystemToNormalizedDisplay()
         text_actors['distance'].GetPosition2Coordinate().SetValue(0.25, 0.75)
-        text_actors['distance'].GetTextProperty().SetFontSize(12)
+        text_actors['distance'].GetTextProperty().SetFontSize(20)
         text_actors['distance'].GetTextProperty().SetColor(1.0, 1.0, 0) 
 
         # Adding the Clipper velocity visualization
         text_actors['velocity'] = vtk.vtkTextActor()
         text_actors['velocity'].SetInput('Stand by for Clipper Velocity...')
         text_actors['velocity'].GetPositionCoordinate().SetCoordinateSystemToNormalizedDisplay()
-        text_actors['velocity'].GetPositionCoordinate().SetValue(0.01, 0.70)
+        text_actors['velocity'].GetPositionCoordinate().SetValue(0.01, 0.65)
         text_actors['velocity'].GetPosition2Coordinate().SetCoordinateSystemToNormalizedDisplay()
-        text_actors['velocity'].GetPosition2Coordinate().SetValue(0.25, 0.70)
-        text_actors['velocity'].GetTextProperty().SetFontSize(12)
+        text_actors['velocity'].GetPosition2Coordinate().SetValue(0.25, 0.65)
+        text_actors['velocity'].GetTextProperty().SetFontSize(20)
         text_actors['velocity'].GetTextProperty().SetColor(0.016, 0.85, 1.0)
         
          # Adding the Clipper acceleration visualization
         text_actors['acceleration'] = vtk.vtkTextActor()
         text_actors['acceleration'].SetInput('Stand by for Clipper Acceleration...')
         text_actors['acceleration'].GetPositionCoordinate().SetCoordinateSystemToNormalizedDisplay()
-        text_actors['acceleration'].GetPositionCoordinate().SetValue(0.01, 0.65)
+        text_actors['acceleration'].GetPositionCoordinate().SetValue(0.01, 0.55)
         text_actors['acceleration'].GetPosition2Coordinate().SetCoordinateSystemToNormalizedDisplay()
-        text_actors['acceleration'].GetPosition2Coordinate().SetValue(0.25, 0.65)
-        text_actors['acceleration'].GetTextProperty().SetFontSize(12)
+        text_actors['acceleration'].GetPosition2Coordinate().SetValue(0.25, 0.55)
+        text_actors['acceleration'].GetTextProperty().SetFontSize(20)
         text_actors['acceleration'].GetTextProperty().SetColor(1, 0.063, 0.96)
 
         # Adding a sign for users to know when Clipper has launched
@@ -2793,7 +2793,7 @@ class MainWindow(QMainWindow):
         text_actors['launch'].GetPositionCoordinate().SetValue(0.01, 0.85)
         text_actors['launch'].GetPosition2Coordinate().SetCoordinateSystemToNormalizedDisplay()
         text_actors['launch'].GetPosition2Coordinate().SetValue(0.25, 0.85)
-        text_actors['launch'].GetTextProperty().SetFontSize(12)
+        text_actors['launch'].GetTextProperty().SetFontSize(20)
         text_actors['launch'].GetTextProperty().SetColor(1.0, 0, 0)
         
 
