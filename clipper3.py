@@ -2508,7 +2508,7 @@ class MainWindow(QMainWindow):
 
         plt.figure()
         plt.plot(tsteps, self.state.clipper_acc_plt, color=(1, 0.063, 0.96))
-        plt.ticklabel_format(axis='y', style='sci')
+        plt.ticklabel_format(axis='y', style='sci', scilimits=[-2, 2])
         plt.xlabel("clock time (s)")
         plt.ylabel("Clipper acceleration (km/s$^2$)")
         plt.title("Clipper Acceleration as a Function of Time")
@@ -2516,6 +2516,7 @@ class MainWindow(QMainWindow):
 
         fig, ax1 = plt.subplots()
         l1, = ax1.plot(tsteps, self.state.clipper_acc_plt, color=(1, 0.063, 0.96))
+        ax1.ticklabel_format(axis='y', style='sci', scilimits=[-2, 2])
         ax1.set_xlabel("clock time (s)")
         ax1.set_ylabel("unitless for comparison (scaled to acceleration)")
         ax1.set_title("Combined Metric Plots as a Function of Time")
@@ -2524,8 +2525,10 @@ class MainWindow(QMainWindow):
         ax2.set_yticks([])
         ax3 = ax1.twinx()
         l3, = ax3.plot(tsteps, self.state.clipper_vel_plt, color=(0.016, 0.85, 1.0))
-        ax1.legend([l2, l3, l1], ["dist", "vel", "acc"])
         ax3.set_yticks([])
+        box1 = ax1.get_position()
+        ax1.set_position([box1.x0, box1.y0, box1.width * 0.9, box1.height])
+        ax1.legend([l2, l3, l1], ["dist", "vel", "acc"], loc='center left', bbox_to_anchor=(1, 0.5))
 
         fig.savefig(os.path.join(plt_metrics_path, "clipper_combined.png"))
 
