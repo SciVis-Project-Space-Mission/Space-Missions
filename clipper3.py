@@ -2494,24 +2494,24 @@ class MainWindow(QMainWindow):
 
         plt.figure()
         plt.plot(tsteps, self.state.clipper_europa_dist_plt)
-        plt.xlabel("clock time")
+        plt.xlabel("clock time (s)")
         plt.ylabel("Clipper-Europa distance (km)")
-        plt.title("Clipper-Europa distance as a Function of Time")
+        plt.title("Clipper-Europa Distance as a Function of Time")
         plt.savefig(os.path.join(plt_metrics_path, "clipper_europa_dist.png"))
 
         plt.figure()
         plt.plot(tsteps, self.state.clipper_vel_plt)
-        plt.xlabel("clock time")
+        plt.xlabel("clock time (s)")
         plt.ylabel("Clipper velocity (km/s)")
-        plt.title("Clipper velocity as a Function of Time")
+        plt.title("Clipper Velocity as a Function of Time")
         plt.savefig(os.path.join(plt_metrics_path, "clipper_vel.png"))
 
         plt.figure()
         plt.plot(tsteps, self.state.clipper_acc_plt)
         plt.ticklabel_format(axis='y', style='sci')
-        plt.xlabel("clock time")
-        plt.ylabel("Clipper acceleration (km/s^2)")
-        plt.title("Clipper acceleration as a Function of Time")
+        plt.xlabel("clock time (s)")
+        plt.ylabel("Clipper acceleration (km/s$^2$)")
+        plt.title("Clipper Acceleration as a Function of Time")
         plt.savefig(os.path.join(plt_metrics_path, "clipper_acc.png"))
 
     def main(self, args):
