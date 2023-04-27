@@ -2514,6 +2514,21 @@ class MainWindow(QMainWindow):
         plt.title("Clipper Acceleration as a Function of Time")
         plt.savefig(os.path.join(plt_metrics_path, "clipper_acc.png"))
 
+        fig, ax1 = plt.subplots()
+        l1, = ax1.plot(tsteps, self.state.clipper_acc_plt, color=(1, 0.063, 0.96))
+        ax1.set_xlabel("clock time (s)")
+        ax1.set_ylabel("unitless for comparison (scaled to acceleration)")
+        ax1.set_title("Combined Metric Plots as a Function of Time")
+        ax2 = ax1.twinx()
+        l2, = ax2.plot(tsteps, self.state.clipper_europa_dist_plt, color=(1.0, 1.0, 0))
+        ax2.set_yticks([])
+        ax3 = ax1.twinx()
+        l3, = ax3.plot(tsteps, self.state.clipper_vel_plt, color=(0.016, 0.85, 1.0))
+        ax1.legend([l2, l3, l1], ["dist", "vel", "acc"])
+        ax3.set_yticks([])
+
+        fig.savefig(os.path.join(plt_metrics_path, "clipper_combined.png"))
+
     def main(self, args):
         verbose = args.verbose
         ''' Mission Data '''
