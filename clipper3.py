@@ -12,6 +12,7 @@ import faulthandler
 import sys
 from datetime import datetime
 import matplotlib.pyplot as plt
+import pandas as pd
 
 
 def make_reference_frame(origin: np.ndarray, X: np.ndarray, Y: np.ndarray, Z: np.ndarray, size: float) -> vtk.vtkActor:
@@ -1598,11 +1599,11 @@ Class to encapsulate various aspects of the simulation state
 class SimulationState:
     def __init__(self, params: Dict[str, Any], time_step: float, clock: float):
         self.params = params
-        if self.params.plt_metrics is not None:
-            self.timesteps_plt = []
-            self.clipper_europa_dist_plt = []
-            self.clipper_vel_plt = []
-            self.clipper_acc_plt = []
+        if self.params.plt_metrics is not None or self.params.data_metrics is not None:
+            self.timesteps_save = []
+            self.clipper_europa_dist_save = []
+            self.clipper_vel_save = []
+            self.clipper_acc_save = []
         self.time_step = time_step
         self.clock = clock
         self.tether_changed = False
@@ -1710,11 +1711,11 @@ class Simulation:
         vel_acc_proj = np.dot(clipper_velocity_vec, clipper_acceleration_vec)
         ClipperAcceleration = math.copysign(np.linalg.norm(clipper_acceleration_vec), vel_acc_proj)
 
-        if self.state.params.plt_metrics is not None:
-            self.state.timesteps_plt.append(clock)
-            self.state.clipper_europa_dist_plt.append(dClipper2Body)
-            self.state.clipper_vel_plt.append(ClipperVelocity)
-            self.state.clipper_acc_plt.append(ClipperAcceleration)
+        if self.state.params.plt_metrics is not None or self.state.params.data_metrics is not None:
+            self.state.timesteps_save.append(clock)
+            self.state.clipper_europa_dist_save.append(dClipper2Body)
+            self.state.clipper_vel_save.append(ClipperVelocity)
+            self.state.clipper_acc_save.append(ClipperAcceleration)
 
         # extend Clipper's orbit
         self.data.clipper.update(clock)
@@ -1838,6 +1839,8 @@ class MainWindow(QMainWindow):
     def quit_cb(self):
         if self.state.params.plt_metrics is not None:
             self.save_metrics_plts(self.state.params.plt_metrics)
+        if self.state.params.data_metrics is not None:
+            self.save_metrics_data(self.state.params.data_metrics)
         sys.exit(0)
 
     def anyevent_cb(self, obj, event):
@@ -2393,6 +2396,8 @@ class MainWindow(QMainWindow):
     def quit(self):
         if self.state.params.plt_metrics is not None:
             self.save_metrics_plts(self.state.params.plt_metrics)
+        if self.state.params.data_metrics is not None:
+            self.save_metrics_data(self.state.params.data_metrics)
         sys.exit(0)
 
     def timer_callback(self):
@@ -2494,24 +2499,24 @@ class MainWindow(QMainWindow):
         self.state.camera_modified = False
 
     def save_metrics_plts(self, plt_metrics_path):
-        tsteps = self.state.timesteps_plt
+        tsteps = self.state.timesteps_save
 
         plt.figure()
-        plt.plot(tsteps, self.state.clipper_europa_dist_plt, color=(1.0, 1.0, 0))
+        plt.plot(tsteps, self.state.clipper_europa_dist_save, color=(1.0, 1.0, 0))
         plt.xlabel("clock time (s)")
         plt.ylabel("Clipper-Europa distance (km)")
         plt.title("Clipper-Europa Distance as a Function of Time")
         plt.savefig(os.path.join(plt_metrics_path, "clipper_europa_dist.png"))
 
         plt.figure()
-        plt.plot(tsteps, self.state.clipper_vel_plt, color=(0.016, 0.85, 1.0))
+        plt.plot(tsteps, self.state.clipper_vel_save, color=(0.016, 0.85, 1.0))
         plt.xlabel("clock time (s)")
         plt.ylabel("Clipper velocity (km/s)")
         plt.title("Clipper Velocity as a Function of Time")
         plt.savefig(os.path.join(plt_metrics_path, "clipper_vel.png"))
 
         plt.figure()
-        plt.plot(tsteps, self.state.clipper_acc_plt, color=(1, 0.063, 0.96))
+        plt.plot(tsteps, self.state.clipper_acc_save, color=(1, 0.063, 0.96))
         plt.ticklabel_format(axis='y', style='sci', scilimits=[-2, 2])
         plt.xlabel("clock time (s)")
         plt.ylabel("Clipper acceleration (km/s$^2$)")
@@ -2519,22 +2524,30 @@ class MainWindow(QMainWindow):
         plt.savefig(os.path.join(plt_metrics_path, "clipper_acc.png"))
 
         fig, ax1 = plt.subplots()
-        l1, = ax1.plot(tsteps, self.state.clipper_acc_plt, color=(1, 0.063, 0.96))
+        l1, = ax1.plot(tsteps, self.state.clipper_acc_save, color=(1, 0.063, 0.96))
         ax1.ticklabel_format(axis='y', style='sci', scilimits=[-2, 2])
         ax1.set_xlabel("clock time (s)")
         ax1.set_ylabel("unitless for comparison (scaled to acceleration)")
         ax1.set_title("Combined Metric Plots as a Function of Time")
         ax2 = ax1.twinx()
-        l2, = ax2.plot(tsteps, self.state.clipper_europa_dist_plt, color=(1.0, 1.0, 0))
+        l2, = ax2.plot(tsteps, self.state.clipper_europa_dist_save, color=(1.0, 1.0, 0))
         ax2.set_yticks([])
         ax3 = ax1.twinx()
-        l3, = ax3.plot(tsteps, self.state.clipper_vel_plt, color=(0.016, 0.85, 1.0))
+        l3, = ax3.plot(tsteps, self.state.clipper_vel_save, color=(0.016, 0.85, 1.0))
         ax3.set_yticks([])
         box1 = ax1.get_position()
         ax1.set_position([box1.x0, box1.y0, box1.width * 0.9, box1.height])
         ax1.legend([l2, l3, l1], ["dist", "vel", "acc"], loc='center left', bbox_to_anchor=(1, 0.5))
 
         fig.savefig(os.path.join(plt_metrics_path, "clipper_combined.png"))
+    
+    def save_metrics_data(self, data_metrics_path):
+        metric_df = pd.DataFrame()
+        metric_df['timestep'] = self.state.timesteps_save
+        metric_df['Clipper-Europa distance'] = self.state.clipper_europa_dist_save
+        metric_df['velocity'] = self.state.clipper_vel_save
+        metric_df['acceleration'] = self.state.clipper_acc_save
+        metric_df.to_csv(os.path.join(data_metrics_path, "clipper_metrics.csv"))
 
     def main(self, args):
         verbose = args.verbose
@@ -2925,6 +2938,8 @@ class MainWindow(QMainWindow):
         app_return_code = app.exec_()
         if self.state.params.plt_metrics is not None:
             self.save_metrics_plts(self.state.params.plt_metrics)
+        if self.state.params.data_metrics is not None:
+            self.save_metrics_data(self.state.params.data_metrics)
         sys.exit(app_return_code)
 
 if __name__ == '__main__':
@@ -2951,6 +2966,7 @@ if __name__ == '__main__':
     parser.add_argument('--media_path', type=str, default='media', help='Path to media files')
     parser.add_argument('--naif_path', type=str, default='naif', help='Path to naif files')
     parser.add_argument('--plt_metrics', type=str, nargs='?', const='', help='directory to plot metrics from simulation run')
+    parser.add_argument('--data_metrics', type=str, nargs='?', const='', help='directory to save metrics csv from simulation run')
     args = parser.parse_args()
 
     app = QApplication(sys.argv)
