@@ -2,10 +2,10 @@ import matplotlib.pyplot as plt
 import os.path
 import pandas as pd
 
-metrics_path = "clipper_metrics_full.csv"
+metrics_path = "clipper_metrics_jup.csv"
 plt_metrics_path = ""
-metrics_time_st = 1.01e9
-metrics_time_ed = 1.02e9
+metrics_time_st = .994e9
+metrics_time_ed = .999e9
 
 metrics_df = pd.read_csv(metrics_path)
 
