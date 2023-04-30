@@ -46,7 +46,8 @@ Improved version of the original script for visualizing the Europa Clipper missi
 
 The latest mission trajectory file has been provided at `./naif/21F31_MEGA_L241010_A300411_LP01_V5_pad_scpse.bsp`. This is used as a replacement for the previous `./naif/19F23_VEEGA_L230511_A290930_LP01_V2_scpse.bsp` Hardcoded parameters have been adjusted for:
 
-1. Loading the new file instead of the old one
+1. Furnishing the new file instead of the old one
+2. Finding the coverage of the new file instead of the old one
 2. Empirically determined new launch time
 3. Empirically determined new arrival time
 
