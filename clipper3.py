@@ -1472,7 +1472,6 @@ class VTKUtils:
 
     # Return: actor_plane, actor_perimeter
     # Ecliptic disk and surrounding perimeter
-    # TODO: command line option: AttributeError: 'MainWindow' object has no attribute 'graphics'
     def make_ecliptic_plane(data: DataLoader) -> List[vtk.vtkActor]:
         ecliptic_actors = []
         ecliptic = vtk.vtkRegularPolygonSource()
@@ -1867,7 +1866,6 @@ class MainWindow(QMainWindow):
                     cam_setting['up'])
                 self.graphics.all_actors['text']['bodies'].SetInput(
                     'Current Focus: {}'.format(self.state.params.planet_focus))
-        # TODO: bugged, replace with change_planet_focus()
 
             # Overrides the default vtk behavior for keypress '3'
             if int(new_key) == 3:
@@ -1878,7 +1876,7 @@ class MainWindow(QMainWindow):
             self.graphics.all_actors['text']['bodies'].SetInput(
                 'Current Focus: None')
             self.state.params.do_tether = False
-        elif new_key == 'o' or new_key == 'O': # TODO: orbits bugged, circuit eventually not complete
+        elif new_key == 'o' or new_key == 'O':
             self.state.params.show_orbits = not self.state.params.show_orbits
             if self.state.params.show_orbits:
                 myprint(verbose=True, text='now showing orbits')
@@ -2312,7 +2310,6 @@ class MainWindow(QMainWindow):
     def update_camera_focus_position_ui(self, target):
         self.ui.cameraTargetComboBox.setCurrentIndex(self.ui.target_to_index(target))
 
-    # TODO: need UI to update clipping plane locs
     def play_event_cb(self, event_id):
 
         event_name = self.ui.events[event_id]
