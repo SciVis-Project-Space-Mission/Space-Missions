@@ -2,6 +2,38 @@
 
 Dante Basile and Dalia Bekdache
 
+# Environment Specification
+
+## General (History) Specification
+
+A general specification of the environment obtained from running:
+
+```
+conda env export --from-history > environment_history.yml
+```
+
+can be found in `environment_history.yml`.
+
+## Full Specification for win64 System
+
+A full specification of the environment for a win64 system obtained from running:
+
+```
+conda env export > environment.yml
+```
+
+can be found in `environment_win64.yml`.
+
+## Building Environment
+
+Running:
+
+```
+conda env create -f <environment.yml>
+```
+
+with the appropriate file for the system platform will build the environment.
+
 # `clipper3.py` Instructions
 
 ## Description
@@ -33,6 +65,7 @@ The metrics can be saved as PNG plots and/or a CSV file after the simulation ter
 ## Usage
 
 This script can be run as before:
+
 ```
 python clipper3.py
 ```

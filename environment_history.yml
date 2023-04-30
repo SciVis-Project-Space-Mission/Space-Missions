@@ -1,0 +1,12 @@
+name: scivis
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - vtk=9.2.5
+  - spiceypy
+  - scipy
+  - pyqt
+  - matplotlib
+  - pandas
+prefix: C:\Users\dbasi\anaconda3\envs\scivis
