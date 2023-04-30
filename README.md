@@ -101,6 +101,10 @@ The user then edits the file directly to specify the hardcoded parameters:
 
 2. `plt_metrics_path`: a path to the folder where the plots will be saved to. If given an empty string, the plots will be saved in the same directory as `plot_metrics_custom.py`.
 
+3. `metrics_time_st`: Start time to consider for the range of the timeframe to be plotted
+
+4. `metrics_time_ed`: End time to consider for the range of the timeframe to be plotted
+
 For example, the parameters used to obtain the plots of Clipper's orbit of Jupiter are:
 
 ``` python
