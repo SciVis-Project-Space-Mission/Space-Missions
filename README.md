@@ -19,7 +19,7 @@ can be found in `environment_history.yml`.
 A full specification of the environment for a win64 system obtained from running:
 
 ```
-conda env export > environment.yml
+conda env export > environment_win64.yml
 ```
 
 can be found in `environment_win64.yml`.
